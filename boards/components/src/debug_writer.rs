@@ -56,8 +56,8 @@ impl Component for DebugWriterComponent {
 
     unsafe fn finalize(self, _s: Self::StaticInput) -> Self::Output {
         let buf = static_init!(
-            [u8; 1024 * DEBUG_BUFFER_KBYTE],
-            [0; 1024 * DEBUG_BUFFER_KBYTE]
+            [u8; 4096 * DEBUG_BUFFER_KBYTE],
+            [0; 4096 * DEBUG_BUFFER_KBYTE]
         );
         let (output_buf, internal_buf) = buf.split_at_mut(DEBUG_BUFFER_SPLIT);
 
@@ -97,8 +97,8 @@ impl<U: uart::Uart<'static> + uart::Transmit<'static> + 'static> Component
 
     unsafe fn finalize(self, _s: Self::StaticInput) -> Self::Output {
         let buf = static_init!(
-            [u8; 1024 * DEBUG_BUFFER_KBYTE],
-            [0; 1024 * DEBUG_BUFFER_KBYTE]
+            [u8; 4096 * DEBUG_BUFFER_KBYTE],
+            [0; 4096 * DEBUG_BUFFER_KBYTE]
         );
         let (output_buf, internal_buf) = buf.split_at_mut(DEBUG_BUFFER_SPLIT);
 

@@ -512,6 +512,13 @@ pub fn begin_debug_verbose_fmt(args: Arguments, file_line: &(&'static str, u32))
     writer.publish_bytes();
 }
 
+pub fn debug_process(proc: &dyn ProcessType) {
+    let writer = unsafe { get_debug_writer() };
+
+    proc.print_full_process(writer);
+    writer.publish_bytes();
+}
+
 /// In-kernel `println()` debugging.
 #[macro_export]
 macro_rules! debug {

@@ -253,6 +253,19 @@ impl<'a, C: ProcessManagementCapability> ProcessConsole<'a, C> {
                                     },
                                 );
                             });
+                        } else if clean_str.starts_with("debug") {
+                            let argument = clean_str.split_whitespace().nth(1);
+                            argument.map(|name| {
+                                self.kernel.process_each_capability(
+                                    &self.capability,
+                                    |proc| {
+                                        let proc_name = proc.get_process_name();
+                                        if proc_name == name {
+                                            kernel::debug::debug_process(proc);
+                                        }
+                                    },
+                                );
+                            });
                         } else if clean_str.starts_with("list") {
                             debug!(" PID    Name                Quanta  Syscalls  Dropped Callbacks  Restarts    State  Grants");
                             self.kernel
