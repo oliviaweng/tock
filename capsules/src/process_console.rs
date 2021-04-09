@@ -12,6 +12,7 @@
 //!  - 'stop n' stops the process with name n
 //!  - 'start n' starts the stopped process with name n
 //!  - 'fault n' forces the process with name n into a fault state
+//!  - 'panic' forces the kernel to panic and print the panic debug information
 //!
 //! ### `list` Command Fields:
 //!
@@ -115,7 +116,10 @@ use core::cell::Cell;
 use core::cmp;
 use core::str;
 use kernel::capabilities::ProcessManagementCapability;
-use kernel::common::cells::TakeCell;
+use kernel::common::cells::{OptionalCell, TakeCell};
+use kernel::common::dynamic_deferred_call::{
+    DeferredCallHandle, DynamicDeferredCall, DynamicDeferredCallClient,
+};
 use kernel::debug;
 use kernel::hil::uart;
 use kernel::introspection::KernelInfo;
@@ -148,6 +152,12 @@ pub struct ProcessConsole<'a, C: ProcessManagementCapability> {
     /// Internal flag that the process console should parse the command it just
     /// received after finishing echoing the last newline character.
     execute: Cell<bool>,
+
+    /// Deferred Caller. Used to delay the `panic` command.
+    deferred_caller: &'a DynamicDeferredCall,
+    /// Deferred Call Handle
+    handle: OptionalCell<DeferredCallHandle>,
+
     kernel: &'static Kernel,
     capability: C,
 }
@@ -158,6 +168,7 @@ impl<'a, C: ProcessManagementCapability> ProcessConsole<'a, C> {
         tx_buffer: &'static mut [u8],
         rx_buffer: &'static mut [u8],
         cmd_buffer: &'static mut [u8],
+        deferred_caller: &'a DynamicDeferredCall,
         kernel: &'static Kernel,
         capability: C,
     ) -> ProcessConsole<'a, C> {
@@ -171,9 +182,15 @@ impl<'a, C: ProcessManagementCapability> ProcessConsole<'a, C> {
             command_index: Cell::new(0),
             running: Cell::new(false),
             execute: Cell::new(false),
+            deferred_caller,
+            handle: OptionalCell::empty(),
             kernel: kernel,
             capability: capability,
         }
+    }
+
+    pub fn initialize_callback_handle(&self, handle: DeferredCallHandle) {
+        self.handle.replace(handle);
     }
 
     pub fn start(&self) -> Result<(), ErrorCode> {
@@ -210,7 +227,7 @@ impl<'a, C: ProcessManagementCapability> ProcessConsole<'a, C> {
                         let clean_str = s.trim();
                         if clean_str.starts_with("help") {
                             debug!("Welcome to the process console.");
-                            debug!("Valid commands are: help status list stop start fault");
+                            debug!("Valid commands are: help status list stop start fault panic");
                         } else if clean_str.starts_with("start") {
                             let argument = clean_str.split_whitespace().nth(1);
                             argument.map(|name| {
@@ -290,6 +307,23 @@ impl<'a, C: ProcessManagementCapability> ProcessConsole<'a, C> {
                                 "Timeslice expirations: {}",
                                 info.timeslice_expirations(&self.capability)
                             );
+                        } else if clean_str.starts_with("panic") {
+                            // Mark that we want a deferred call so we cannot
+                            // panic from a different callback chain.
+                            //
+                            // Because process console uses UART, and so does
+                            // panic!(), on some boards/implementations it can
+                            // be problematic to panic in a UART callback (which
+                            // we are currently in). For example, the underlying
+                            // UART hardware driver may need this callback chain
+                            // to return to reset state before more data can be
+                            // printed. Calling a panic interrupts that flow and
+                            // prevents that cleanup from happening.
+                            //
+                            // To avoid this we use a deferred call so we can
+                            // panic from _that_ callback chain, and allow this
+                            // one to complete.
+                            self.handle.map(|handle| self.deferred_caller.set(*handle));
                         } else {
                             debug!("Valid commands are: help status list stop start fault");
                         }
@@ -351,6 +385,7 @@ impl<'a, C: ProcessManagementCapability> uart::TransmitClient for ProcessConsole
         }
     }
 }
+
 impl<'a, C: ProcessManagementCapability> uart::ReceiveClient for ProcessConsole<'a, C> {
     fn received_buffer(
         &self,
@@ -394,5 +429,13 @@ impl<'a, C: ProcessManagementCapability> uart::ReceiveClient for ProcessConsole<
         }
         self.rx_in_progress.set(true);
         let _ = self.uart.receive_buffer(read_buf, 1);
+    }
+}
+
+impl<'a, C: ProcessManagementCapability> DynamicDeferredCallClient for ProcessConsole<'a, C> {
+    fn call(&self, _handle: DeferredCallHandle) {
+        // Deferred call fired. The only thing we use this for is a deferred
+        // panic, so go ahead and do that.
+        panic!("ProcessConsole forced a kernel panic.");
     }
 }
