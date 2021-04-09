@@ -232,7 +232,7 @@ pub unsafe fn main() {
     //--------------------------------------------------------------------------
 
     let dynamic_deferred_call_clients =
-        static_init!([DynamicDeferredCallClientState; 4], Default::default());
+        static_init!([DynamicDeferredCallClientState; 5], Default::default());
     let dynamic_deferred_caller = static_init!(
         DynamicDeferredCall,
         DynamicDeferredCall::new(dynamic_deferred_call_clients)
@@ -292,9 +292,12 @@ pub unsafe fn main() {
     let uart_mux = components::console::UartMuxComponent::new(cdc, 115200, dynamic_deferred_caller)
         .finalize(());
 
-    let pconsole =
-        components::process_console::ProcessConsoleComponent::new(board_kernel, uart_mux)
-            .finalize(());
+    let pconsole = components::process_console::ProcessConsoleComponent::new(
+        board_kernel,
+        uart_mux,
+        dynamic_deferred_caller,
+    )
+    .finalize(());
 
     // Setup the console.
     let console = components::console::ConsoleComponent::new(board_kernel, uart_mux).finalize(());

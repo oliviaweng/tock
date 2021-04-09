@@ -16,6 +16,7 @@
 use capsules::process_console;
 use capsules::virtual_uart::{MuxUart, UartDevice};
 use kernel::capabilities;
+use kernel::common::dynamic_deferred_call::DynamicDeferredCall;
 use kernel::component::Component;
 use kernel::hil;
 use kernel::static_init;
@@ -23,16 +24,19 @@ use kernel::static_init;
 pub struct ProcessConsoleComponent {
     board_kernel: &'static kernel::Kernel,
     uart_mux: &'static MuxUart<'static>,
+    deferred_caller: &'static DynamicDeferredCall,
 }
 
 impl ProcessConsoleComponent {
     pub fn new(
         board_kernel: &'static kernel::Kernel,
         uart_mux: &'static MuxUart,
+        deferred_caller: &'static DynamicDeferredCall,
     ) -> ProcessConsoleComponent {
         ProcessConsoleComponent {
             board_kernel: board_kernel,
             uart_mux: uart_mux,
+            deferred_caller,
         }
     }
 }
@@ -56,9 +60,15 @@ impl Component for ProcessConsoleComponent {
                 &mut process_console::WRITE_BUF,
                 &mut process_console::READ_BUF,
                 &mut process_console::COMMAND_BUF,
+                self.deferred_caller,
                 self.board_kernel,
                 Capability,
             )
+        );
+        console.initialize_callback_handle(
+            self.deferred_caller
+                .register(console)
+                .expect("no deferred call slot available for ProcessConsole"),
         );
         hil::uart::Transmit::set_transmit_client(console_uart, console);
         hil::uart::Receive::set_receive_client(console_uart, console);
