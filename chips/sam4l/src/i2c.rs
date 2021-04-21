@@ -17,7 +17,7 @@ use kernel::common::peripherals::{PeripheralManagement, PeripheralManager};
 use kernel::common::registers::{register_bitfields, FieldValue, ReadOnly, ReadWrite, WriteOnly};
 use kernel::common::StaticRef;
 use kernel::hil;
-use kernel::ClockInterface;
+use kernel::traits::chip::ClockInterface;
 
 // Listing of all registers related to the TWIM peripheral.
 // Section 27.9 of the datasheet
