@@ -10,14 +10,12 @@ use crate::net::stream::{decode_bytes, decode_u8, encode_bytes, encode_u8, SResu
 use core::cell::Cell;
 use core::cmp::min;
 use core::mem;
+use kernel::appslice::{Read, ReadOnlyAppSlice, ReadWrite, ReadWriteAppSlice};
 use kernel::common::cells::{MapCell, OptionalCell, TakeCell};
 use kernel::common::dynamic_deferred_call::{
     DeferredCallHandle, DynamicDeferredCall, DynamicDeferredCallClient,
 };
-use kernel::{
-    CommandReturn, Driver, ErrorCode, Grant, ProcessId, Read, ReadOnlyAppSlice, ReadWrite,
-    ReadWriteAppSlice, Upcall,
-};
+use kernel::{CommandReturn, Driver, ErrorCode, Grant, ProcessId, Upcall};
 
 const MAX_NEIGHBORS: usize = 4;
 const MAX_KEYS: usize = 4;

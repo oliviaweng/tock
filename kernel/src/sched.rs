@@ -10,6 +10,11 @@ pub(crate) mod mlfq;
 pub(crate) mod priority;
 pub(crate) mod round_robin;
 
+pub use cooperative::{CoopProcessNode, CooperativeSched};
+pub use mlfq::{MLFQProcessNode, MLFQSched};
+pub use priority::PrioritySched;
+pub use round_robin::{RoundRobinProcessNode, RoundRobinSched};
+
 use core::cell::Cell;
 use core::ptr::NonNull;
 

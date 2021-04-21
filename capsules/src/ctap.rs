@@ -30,11 +30,10 @@
 use core::cell::Cell;
 use core::marker::PhantomData;
 use core::mem;
+use kernel::appslice::{Read, ReadWrite, ReadWriteAppSlice};
 use kernel::common::cells::{OptionalCell, TakeCell};
 use kernel::hil::usb_hid;
-use kernel::{
-    CommandReturn, Driver, ErrorCode, Grant, ProcessId, Read, ReadWrite, ReadWriteAppSlice, Upcall,
-};
+use kernel::{CommandReturn, Driver, ErrorCode, Grant, ProcessId, Upcall};
 
 /// Syscall driver number.
 use crate::driver;

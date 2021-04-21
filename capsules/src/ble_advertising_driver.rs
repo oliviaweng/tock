@@ -104,12 +104,13 @@
 use core::cell::Cell;
 use core::cmp;
 use core::mem;
+use kernel::appslice::{Read, ReadOnlyAppSlice, ReadWrite, ReadWriteAppSlice};
 use kernel::common::cells::OptionalCell;
 use kernel::debug;
 use kernel::hil::ble_advertising;
 use kernel::hil::ble_advertising::RadioChannel;
 use kernel::hil::time::{Frequency, Ticks};
-use kernel::{CommandReturn, ErrorCode, Read, ReadOnlyAppSlice, ReadWrite, ReadWriteAppSlice};
+use kernel::{CommandReturn, ErrorCode};
 
 /// Syscall driver number.
 use crate::driver;

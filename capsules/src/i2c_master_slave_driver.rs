@@ -13,10 +13,11 @@
 
 use core::cell::Cell;
 use core::cmp;
+use kernel::appslice::{Read, ReadWrite, ReadWriteAppSlice};
 use kernel::common::cells::{MapCell, TakeCell};
 use kernel::hil;
 use kernel::{CommandReturn, ProcessId, Upcall};
-use kernel::{Driver, ErrorCode, Read, ReadWrite, ReadWriteAppSlice};
+use kernel::{Driver, ErrorCode};
 
 pub static mut BUFFER1: [u8; 256] = [0; 256];
 pub static mut BUFFER2: [u8; 256] = [0; 256];

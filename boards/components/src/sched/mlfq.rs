@@ -11,15 +11,15 @@ use capsules::virtual_alarm::{MuxAlarm, VirtualMuxAlarm};
 use kernel::component::Component;
 use kernel::hil::time;
 use kernel::procs::Process;
+use kernel::sched::{MLFQProcessNode, MLFQSched};
 use kernel::static_init_half;
-use kernel::{MLFQProcessNode, MLFQSched};
 
 #[macro_export]
 macro_rules! mlfq_component_helper {
     ($A:ty, $N:expr $(,)?) => {{
         use core::mem::MaybeUninit;
+        use kernel::sched::{MLFQProcessNode, MLFQSched};
         use kernel::static_init;
-        use kernel::{MLFQProcessNode, MLFQSched};
         static mut BUF1: MaybeUninit<VirtualMuxAlarm<'static, $A>> = MaybeUninit::uninit();
         static mut BUF2: MaybeUninit<MLFQSched<'static, VirtualMuxAlarm<'static, $A>>> =
             MaybeUninit::uninit();

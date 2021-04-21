@@ -68,11 +68,11 @@
 //! the SAM4L.
 
 use core::mem;
+use kernel::appslice::{Read, ReadOnlyAppSlice};
 use kernel::common::cells::OptionalCell;
 use kernel::hil;
 use kernel::hil::crc::CrcAlg;
 use kernel::{CommandReturn, Driver, ErrorCode, Grant, ProcessId, Upcall};
-use kernel::{Read, ReadOnlyAppSlice};
 
 /// Syscall driver number.
 use crate::driver;

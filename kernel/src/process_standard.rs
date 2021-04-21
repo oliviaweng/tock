@@ -9,12 +9,12 @@ use core::fmt::Write;
 use core::ptr::{write_volatile, NonNull};
 use core::{mem, ptr, slice, str};
 
+use crate::appslice::{ReadOnlyAppSlice, ReadWriteAppSlice};
 use crate::common::cells::{MapCell, NumericCellExt};
 use crate::common::{Queue, RingBuffer};
 use crate::config;
 use crate::debug;
 use crate::errorcode::ErrorCode;
-use crate::mem::{ReadOnlyAppSlice, ReadWriteAppSlice};
 use crate::platform::mpu::{self, MPU};
 use crate::platform::Chip;
 use crate::process::{Error, FunctionCall, FunctionCallSource, Process, State, Task};

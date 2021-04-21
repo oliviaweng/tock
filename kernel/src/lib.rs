@@ -85,10 +85,17 @@
 //!    this use case. It is likely we will have to create new interfaces as new
 //!    use cases are discovered.
 
+// Tock core kernel required nightly features.
+//
+// See https://github.com/tock/tock/issues/1654 for a discussion on these
+// features, why they are needed, potential alternatives, and progress towards
+// stabilizing them in Rust. Adding to this list requires careful review and
+// consideration, and is generally discouraged.
 #![feature(core_intrinsics, const_fn)]
 #![warn(unreachable_pub)]
 #![no_std]
 
+pub mod appslice;
 pub mod capabilities;
 pub mod common;
 pub mod component;
@@ -96,36 +103,30 @@ pub mod debug;
 pub mod hil;
 pub mod introspection;
 pub mod ipc;
+pub mod sched;
 pub mod syscall;
 
 mod config;
 mod driver;
 mod errorcode;
 mod grant;
-mod mem;
 mod memop;
 mod platform;
 mod process;
 mod process_policies;
 mod process_standard;
 mod process_utilities;
-mod sched;
 mod upcall;
 
 pub use crate::driver::{CommandReturn, Driver};
 pub use crate::errorcode::into_statuscode;
 pub use crate::errorcode::ErrorCode;
 pub use crate::grant::{Grant, ProcessGrant};
-pub use crate::mem::{Read, ReadOnlyAppSlice, ReadWrite, ReadWriteAppSlice};
 pub use crate::platform::scheduler_timer::{SchedulerTimer, VirtualSchedulerTimer};
 pub use crate::platform::watchdog;
 pub use crate::platform::{mpu, Chip, InterruptService, Platform};
 pub use crate::platform::{ClockInterface, NoClockControl, NO_CLOCK_CONTROL};
 pub use crate::process::ProcessId;
-pub use crate::sched::cooperative::{CoopProcessNode, CooperativeSched};
-pub use crate::sched::mlfq::{MLFQProcessNode, MLFQSched};
-pub use crate::sched::priority::PrioritySched;
-pub use crate::sched::round_robin::{RoundRobinProcessNode, RoundRobinSched};
 pub use crate::sched::{Kernel, Scheduler};
 pub use crate::upcall::Upcall;
 

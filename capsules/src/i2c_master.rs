@@ -1,11 +1,10 @@
 //! Driver for an I2C Master interface.
 
 use enum_primitive::enum_from_primitive;
+use kernel::appslice::{Read, ReadWrite, ReadWriteAppSlice};
 use kernel::common::cells::{MapCell, OptionalCell, TakeCell};
 use kernel::hil::i2c;
-use kernel::{
-    CommandReturn, Driver, ErrorCode, Grant, ProcessId, Read, ReadWrite, ReadWriteAppSlice, Upcall,
-};
+use kernel::{CommandReturn, Driver, ErrorCode, Grant, ProcessId, Upcall};
 
 /// Syscall driver number.
 use crate::driver;

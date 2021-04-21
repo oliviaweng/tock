@@ -3,14 +3,14 @@
 //! This is a special syscall driver that allows userspace applications to
 //! share memory.
 
+use crate::appslice::{Read, ReadOnlyAppSlice, ReadWriteAppSlice};
 use crate::capabilities::MemoryAllocationCapability;
 use crate::grant::Grant;
-use crate::mem::Read;
 use crate::process;
 use crate::process::ProcessId;
 use crate::sched::Kernel;
 use crate::upcall::Upcall;
-use crate::{CommandReturn, Driver, ErrorCode, ReadOnlyAppSlice, ReadWriteAppSlice};
+use crate::{CommandReturn, Driver, ErrorCode};
 
 /// Syscall number
 pub const DRIVER_NUM: usize = 0x10000;
@@ -105,8 +105,8 @@ impl<const NUM_PROCS: usize> IPC<NUM_PROCS> {
                                         });
                                     upcall.schedule(
                                         called_from.id() + 1,
-                                        crate::mem::Read::len(slice),
-                                        crate::mem::Read::ptr(slice) as usize,
+                                        crate::appslice::Read::len(slice),
+                                        crate::appslice::Read::ptr(slice) as usize,
                                     );
                                 }
                                 None => {

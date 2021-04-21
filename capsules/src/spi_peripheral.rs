@@ -5,12 +5,12 @@ use core::cell::Cell;
 use core::cmp;
 use core::mem;
 
+use kernel::appslice::{Read, ReadOnlyAppSlice, ReadWrite, ReadWriteAppSlice};
 use kernel::common::cells::{MapCell, TakeCell};
 use kernel::hil::spi::ClockPhase;
 use kernel::hil::spi::ClockPolarity;
 use kernel::hil::spi::{SpiSlaveClient, SpiSlaveDevice};
 use kernel::{CommandReturn, Driver, ErrorCode, ProcessId, Upcall};
-use kernel::{Read, ReadOnlyAppSlice, ReadWrite, ReadWriteAppSlice};
 
 /// Syscall driver number.
 use crate::driver;

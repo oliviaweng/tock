@@ -31,13 +31,12 @@ use core::cell::Cell;
 use core::convert::TryInto;
 use core::marker::PhantomData;
 use core::mem;
+use kernel::appslice::{Read, ReadWrite, ReadWriteAppSlice};
 use kernel::common::cells::{OptionalCell, TakeCell};
 use kernel::common::leasable_buffer::LeasableBuffer;
 use kernel::hil::digest;
 use kernel::hil::digest::DigestType;
-use kernel::{
-    CommandReturn, Driver, ErrorCode, Grant, ProcessId, Read, ReadWrite, ReadWriteAppSlice, Upcall,
-};
+use kernel::{CommandReturn, Driver, ErrorCode, Grant, ProcessId, Upcall};
 
 pub struct HmacDriver<'a, H: digest::Digest<'a, T>, T: 'static + DigestType> {
     hmac: &'a H,

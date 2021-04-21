@@ -6,10 +6,10 @@ use core::fmt::Write;
 use core::ptr::NonNull;
 use core::str;
 
+use crate::appslice::{ReadOnlyAppSlice, ReadWriteAppSlice};
 use crate::capabilities;
 use crate::errorcode::ErrorCode;
 use crate::ipc;
-use crate::mem::{ReadOnlyAppSlice, ReadWriteAppSlice};
 use crate::platform::mpu::{self};
 use crate::sched::Kernel;
 use crate::syscall::{self, Syscall, SyscallReturn};

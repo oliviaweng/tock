@@ -22,14 +22,13 @@
 
 use core::cell::Cell;
 use core::mem;
+use kernel::appslice::{ReadWrite, ReadWriteAppSlice};
 use kernel::common::cells::OptionalCell;
 use kernel::hil::entropy;
 use kernel::hil::entropy::{Entropy32, Entropy8};
 use kernel::hil::rng;
 use kernel::hil::rng::{Client, Continue, Random, Rng};
-use kernel::{
-    CommandReturn, Driver, ErrorCode, Grant, ProcessId, ReadWrite, ReadWriteAppSlice, Upcall,
-};
+use kernel::{CommandReturn, Driver, ErrorCode, Grant, ProcessId, Upcall};
 
 /// Syscall driver number.
 use crate::driver;

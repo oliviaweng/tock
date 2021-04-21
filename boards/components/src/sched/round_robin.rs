@@ -15,15 +15,15 @@
 use core::mem::MaybeUninit;
 use kernel::component::Component;
 use kernel::procs::Process;
+use kernel::sched::{RoundRobinProcessNode, RoundRobinSched};
 use kernel::{static_init, static_init_half};
-use kernel::{RoundRobinProcessNode, RoundRobinSched};
 
 #[macro_export]
 macro_rules! rr_component_helper {
     ($N:expr $(,)?) => {{
         use core::mem::MaybeUninit;
+        use kernel::sched::RoundRobinProcessNode;
         use kernel::static_buf;
-        use kernel::RoundRobinProcessNode;
         const UNINIT: MaybeUninit<RoundRobinProcessNode<'static>> = MaybeUninit::uninit();
         static mut BUF: [MaybeUninit<RoundRobinProcessNode<'static>>; $N] = [UNINIT; $N];
         &mut BUF

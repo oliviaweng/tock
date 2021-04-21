@@ -13,10 +13,11 @@
 use core::cell::Cell;
 use core::convert::From;
 use core::mem;
+use kernel::appslice::{Read, ReadOnlyAppSlice};
 use kernel::common::cells::{OptionalCell, TakeCell};
 use kernel::hil;
 use kernel::hil::screen::{ScreenPixelFormat, ScreenRotation};
-use kernel::{CommandReturn, Driver, ErrorCode, Grant, ProcessId, Read, ReadOnlyAppSlice, Upcall};
+use kernel::{CommandReturn, Driver, ErrorCode, Grant, ProcessId, Upcall};
 
 /// Syscall driver number.
 use crate::driver;

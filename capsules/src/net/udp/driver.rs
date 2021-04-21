@@ -20,13 +20,11 @@ use core::convert::TryFrom;
 use core::convert::TryInto;
 use core::mem::size_of;
 use core::{cmp, mem};
+use kernel::appslice::{Read, ReadOnlyAppSlice, ReadWrite, ReadWriteAppSlice};
 use kernel::capabilities::UdpDriverCapability;
 use kernel::common::cells::MapCell;
 use kernel::common::leasable_buffer::LeasableBuffer;
-use kernel::{
-    debug, CommandReturn, Driver, ErrorCode, Grant, ProcessId, Read, ReadOnlyAppSlice, ReadWrite,
-    ReadWriteAppSlice, Upcall,
-};
+use kernel::{debug, CommandReturn, Driver, ErrorCode, Grant, ProcessId, Upcall};
 
 use crate::driver;
 pub const DRIVER_NUM: usize = driver::NUM::Udp as usize;

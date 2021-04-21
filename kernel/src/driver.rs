@@ -69,8 +69,8 @@
 //! kernel (the scheduler and syscall dispatcher) is responsible for
 //! encoding these types into the Tock system call ABI specification.
 
+use crate::appslice::{ReadOnlyAppSlice, ReadWriteAppSlice};
 use crate::errorcode::ErrorCode;
-use crate::mem::{ReadOnlyAppSlice, ReadWriteAppSlice};
 use crate::process;
 use crate::process::ProcessId;
 use crate::syscall::SyscallReturn;

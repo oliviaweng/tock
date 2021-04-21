@@ -40,11 +40,11 @@
 use core::convert::TryFrom;
 use core::{cmp, mem};
 
+use kernel::appslice::{Read, ReadOnlyAppSlice, ReadWrite, ReadWriteAppSlice};
 use kernel::common::cells::{OptionalCell, TakeCell};
 use kernel::hil::uart;
 use kernel::{CommandReturn, Driver};
 use kernel::{ErrorCode, Grant, ProcessId, Upcall};
-use kernel::{Read, ReadOnlyAppSlice, ReadWrite, ReadWriteAppSlice};
 
 /// Syscall driver number.
 use crate::driver;

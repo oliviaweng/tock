@@ -13,12 +13,11 @@
 
 use core::cell::Cell;
 use core::mem;
+use kernel::appslice::{ReadWrite, ReadWriteAppSlice};
 use kernel::hil;
 use kernel::hil::screen::ScreenRotation;
 use kernel::hil::touch::{GestureEvent, TouchEvent, TouchStatus};
-use kernel::{
-    CommandReturn, Driver, ErrorCode, Grant, ProcessId, ReadWrite, ReadWriteAppSlice, Upcall,
-};
+use kernel::{CommandReturn, Driver, ErrorCode, Grant, ProcessId, Upcall};
 
 /// Syscall driver number.
 use crate::driver;

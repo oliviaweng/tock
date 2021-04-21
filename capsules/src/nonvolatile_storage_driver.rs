@@ -57,13 +57,11 @@
 use core::cell::Cell;
 use core::cmp;
 use core::mem;
+use kernel::appslice::{Read, ReadOnlyAppSlice, ReadWrite, ReadWriteAppSlice};
 use kernel::common::cells::{OptionalCell, TakeCell};
 use kernel::hil;
 use kernel::ErrorCode;
-use kernel::{
-    CommandReturn, Driver, Grant, ProcessId, Read, ReadOnlyAppSlice, ReadWrite, ReadWriteAppSlice,
-    Upcall,
-};
+use kernel::{CommandReturn, Driver, Grant, ProcessId, Upcall};
 
 /// Syscall driver number.
 use crate::driver;
