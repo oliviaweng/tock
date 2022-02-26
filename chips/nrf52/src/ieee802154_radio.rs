@@ -1162,3 +1162,90 @@ impl<'p> kernel::hil::radio::RadioData for Radio<'p> {
         Ok(())
     }
 }
+
+// Radio states as defined in the nrf52840dk's product spec
+// section 6.20.5 Radio states
+// The following states are the state 'S' in RadioStateMachine<S>
+struct DISABLED; // default state at radio startup
+struct RXRU;
+struct RXIDLE;
+struct RX;
+struct TXRU;
+struct TXIDLE;
+struct TX;
+struct RXDISABLE;
+struct TXDISABLE;
+
+struct RadioStateMachine<'a, S> {
+    radio: Radio<'a>,
+    state: S,
+}
+
+// The Radio state machine starts in the 'DISABLED' state
+impl<'a> RadioStateMachine<'a, DISABLED> {
+    pub const fn new() -> Self {
+        Self {
+            radio: Radio::new(),
+            state: DISABLED,
+        }
+    }
+    pub fn handle_interrupt(self) -> RadioStateMachineWrapper<'a> {
+        // TODO: Fix - just returns itself
+        // TODO: Handle the state transitions here
+        // Reimplement Radio's handle_interrupt here using
+        // our pretty state machine
+        // can do val.into() stuff here to handle state transitions
+        RadioStateMachineWrapper::DISABLED(self)
+    }
+}
+
+impl<'a> From<RadioStateMachine<'a, DISABLED>> for RadioStateMachine<'a, TXRU> {
+    fn from(r: RadioStateMachine<'a, DISABLED>) -> Self {
+        RadioStateMachine {
+            radio: r.radio,
+            state: TXRU,
+        }
+    }
+}
+
+enum RadioStateMachineWrapper<'a> {
+    DISABLED(RadioStateMachine<'a, DISABLED>),
+}
+
+enum RadioEvent {
+    Disable,
+    TxEn,
+    RxEn,
+    Ready,
+    Start,
+    Stop,
+    PhyEnd,
+    End,
+    Payload,
+    Address,
+    Disabled,
+}
+
+impl<'a> RadioStateMachineWrapper<'a> {
+    pub fn handle_interrupt(self) -> Self {
+        match self {
+            RadioStateMachineWrapper::DISABLED(val) => val.handle_interrupt(),
+        }
+    }
+}
+
+struct Ieee802154Radio<'a> {
+    radio_state_machine: RadioStateMachineWrapper<'a>,
+}
+
+impl<'a> Ieee802154Radio<'a> {
+    pub const fn new() -> Self {
+        Ieee802154Radio {
+            radio_state_machine: RadioStateMachineWrapper::DISABLED(RadioStateMachine::new()),
+        }
+    }
+    #[inline(never)]
+    pub fn handle_interrupt(mut self) {
+        self.radio_state_machine = self.radio_state_machine.handle_interrupt()
+    }
+}
