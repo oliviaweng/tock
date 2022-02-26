@@ -14,6 +14,7 @@ use kernel::debug;
 use kernel::hil::radio;
 use kernel::utilities::cells::OptionalCell;
 use kernel::ErrorCode;
+use kernel::utilities::peripheral_management::{SubscriptionManager};
 
 pub trait Mac {
     /// Initializes the layer; may require a buffer to temporarily retaining frames to be
@@ -60,21 +61,28 @@ pub trait Mac {
         full_mac_frame: &'static mut [u8],
         frame_len: usize,
     ) -> Result<(), (ErrorCode, &'static mut [u8])>;
+
+    fn subscriber_added(&self) {}
+    fn subscriber_removed(&self) {}
 }
+
+
+pub trait Radio: radio::Radio + SubscriptionManager {} 
+impl<T: radio::Radio + SubscriptionManager> Radio for T {} //JWINK
 
 ///
 /// Default implementation of a Mac layer. Acts as a pass-through between a MacDevice
 /// implementation and the underlying radio::Radio device. Does not change the power
 /// state of the radio during operation.
 ///
-pub struct AwakeMac<'a, R: radio::Radio> {
-    radio: &'a R,
+pub struct AwakeMac<'a, R: Radio + > {
+    radio: &'a R ,
 
     tx_client: OptionalCell<&'static dyn radio::TxClient>,
     rx_client: OptionalCell<&'static dyn radio::RxClient>,
 }
 
-impl<'a, R: radio::Radio> AwakeMac<'a, R> {
+impl<'a, R: Radio> AwakeMac<'a, R> {
     pub fn new(radio: &'a R) -> AwakeMac<'a, R> {
         AwakeMac {
             radio: radio,
@@ -84,7 +92,7 @@ impl<'a, R: radio::Radio> AwakeMac<'a, R> {
     }
 }
 
-impl<R: radio::Radio> Mac for AwakeMac<'_, R> {
+impl<R: Radio> Mac for AwakeMac<'_, R> {
     fn initialize(&self, _mac_buf: &'static mut [u8]) -> Result<(), ErrorCode> {
         // do nothing, extra buffer unnecessary
         Ok(())
@@ -145,9 +153,12 @@ impl<R: radio::Radio> Mac for AwakeMac<'_, R> {
     ) -> Result<(), (ErrorCode, &'static mut [u8])> {
         self.radio.transmit(full_mac_frame, frame_len)
     }
+
+    fn subscriber_added(&self) { self.radio.subscriber_added(); }
+    fn subscriber_removed(&self) { self.radio.subscriber_removed(); }
 }
 
-impl<R: radio::Radio> radio::TxClient for AwakeMac<'_, R> {
+impl<R: Radio> radio::TxClient for AwakeMac<'_, R> {
     fn send_done(&self, buf: &'static mut [u8], acked: bool, result: Result<(), ErrorCode>) {
         self.tx_client.map(move |c| {
             c.send_done(buf, acked, result);
@@ -155,7 +166,7 @@ impl<R: radio::Radio> radio::TxClient for AwakeMac<'_, R> {
     }
 }
 
-impl<R: radio::Radio> radio::RxClient for AwakeMac<'_, R> {
+impl<R: Radio> radio::RxClient for AwakeMac<'_, R> {
     fn receive(
         &self,
         buf: &'static mut [u8],

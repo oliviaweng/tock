@@ -1,5 +1,6 @@
 //! IEEE 802.15.4 radio driver for nRF52
 
+//use kernel::debug; //JWINK import for debugging
 use core::cell::Cell;
 use core::convert::TryFrom;
 use kernel;
@@ -10,6 +11,7 @@ use kernel::utilities::registers::interfaces::{Readable, Writeable};
 use kernel::utilities::registers::{register_bitfields, ReadOnly, ReadWrite, WriteOnly};
 use kernel::utilities::StaticRef;
 use kernel::ErrorCode;
+use kernel::utilities::peripheral_management::{GeneralPeripheralManager, PeripheralDevice, SubscriptionManager};
 
 use nrf5x;
 use nrf5x::constants::TxPower;
@@ -674,6 +676,8 @@ pub struct Radio<'p> {
     channel: Cell<RadioChannel>,
     transmitting: Cell<bool>,
     timer0: OptionalCell<&'p crate::timer::TimerAlarm<'p>>,
+    has_rx_subscribers: Cell<bool>,
+    rx_cycling: Cell<bool>,
 }
 
 impl<'a> AlarmClient for Radio<'a> {
@@ -700,6 +704,8 @@ impl<'p> Radio<'p> {
             channel: Cell::new(RadioChannel::DataChannel26),
             transmitting: Cell::new(false),
             timer0: OptionalCell::empty(),
+            has_rx_subscribers: Cell::new(false),
+            rx_cycling: Cell::new(false),
         }
     }
 
@@ -708,26 +714,31 @@ impl<'p> Radio<'p> {
     }
 
     pub fn is_enabled(&self) -> bool {
+        true
+        /* JWINK -> PeripheralManager ensure radio will be enabled whenever it needs to be, so can always return true here.
         self.registers
             .mode
             .matches_all(Mode::MODE::IEEE802154_250KBIT)
+        */
     }
 
     fn rx(&self) {
+        let _radio_manager = GeneralPeripheralManager::<Radio<'p>>::new(self);
         self.registers.event_ready.write(Event::READY::CLEAR);
-
-        if self.transmitting.get() {
-            let tbuf = self.tx_buf.take().unwrap(); // Unwrap fail = Radio TX Buffer produced an invalid result when setting the DMA pointer.
-
-            self.tx_buf.replace(self.set_dma_ptr(tbuf));
-        } else {
+        
+        if !self.transmitting.get() {
             let rbuf = self.rx_buf.take().unwrap(); // Unwrap fail = Radio RX Buffer produced an invalid result when setting the DMA pointer.
             self.rx_buf.replace(self.set_dma_ptr(rbuf));
         }
 
-        self.registers.task_rxen.write(Task::ENABLE::SET);
-
-        self.enable_interrupts();
+        //In the event of multiple consecutive reads, the event_ready register won't trigger multiple interrupts, so we have to 
+        // be able to manually transition from RxIdle to Rx here.
+        if self.registers.state.get() == nrf5x::constants::RADIO_STATE_RXIDLE { 
+            self.registers.event_end.write(Event::READY::CLEAR);
+            self.registers.task_start.write(Task::ENABLE::SET);
+        } else {
+            self.registers.task_rxen.write(Task::ENABLE::SET);
+        }
     }
 
     fn set_rx_address(&self) {
@@ -744,12 +755,14 @@ impl<'p> Radio<'p> {
 
     fn radio_on(&self) {
         // reset and enable power
+        //debug!("RADIO ON");
         self.registers.power.write(Task::ENABLE::CLEAR);
         self.registers.power.write(Task::ENABLE::SET);
     }
 
-    fn radio_off(&self) {
+    pub fn radio_off(&self) {
         self.registers.power.write(Task::ENABLE::CLEAR);
+        //debug!("RADIO OFF");
     }
 
     fn set_tx_power(&self) {
@@ -766,7 +779,10 @@ impl<'p> Radio<'p> {
     // TODO: Theres an additional step for 802154 rx/tx handling
     #[inline(never)]
     pub fn handle_interrupt(&self) {
+        //debug!("Radio Interrupt, current state: {} ", self.registers.state.get());
+        let _radio_manager = GeneralPeripheralManager::new(self);
         self.disable_all_interrupts();
+        self.rx_cycling.set(false); 
 
         if self.registers.event_ready.is_set(Event::READY) {
             self.registers.event_ready.write(Event::READY::CLEAR);
@@ -774,7 +790,7 @@ impl<'p> Radio<'p> {
             if self.transmitting.get()
                 && self.registers.state.get() == nrf5x::constants::RADIO_STATE_RXIDLE
             {
-                self.registers.task_ccastart.write(Task::ENABLE::SET);
+                self.registers.task_ccastart.write(Task::ENABLE::SET); 
             } else {
                 self.registers.task_start.write(Task::ENABLE::SET);
             }
@@ -823,8 +839,6 @@ impl<'p> Radio<'p> {
                     client.send_done(tbuf, false, result)
                 });
             }
-
-            self.enable_interrupts();
         }
 
         // tx or rx finished!
@@ -836,7 +850,7 @@ impl<'p> Radio<'p> {
             } else {
                 Err(ErrorCode::FAIL)
             };
-
+            
             match self.registers.state.get() {
                 nrf5x::constants::RADIO_STATE_TXRU
                 | nrf5x::constants::RADIO_STATE_TXIDLE
@@ -870,11 +884,7 @@ impl<'p> Radio<'p> {
                 // Radio state - Disabled
                 _ => (),
             }
-            self.radio_off();
-            self.radio_initialize();
-            self.rx();
         }
-        self.enable_interrupts();
     }
 
     pub fn enable_interrupts(&self) {
@@ -901,14 +911,6 @@ impl<'p> Radio<'p> {
     }
 
     fn radio_initialize(&self) {
-        self.radio_on();
-
-        // Radio disable
-        self.registers.event_disabled.set(0);
-        self.registers.task_disable.write(Task::ENABLE::SET);
-        while self.registers.event_disabled.get() == 0 {}
-        // end radio disable
-
         self.ieee802154_set_channel_rate();
 
         self.ieee802154_set_packet_config();
@@ -926,8 +928,6 @@ impl<'p> Radio<'p> {
         self.set_tx_address();
         self.set_rx_address();
 
-        // First step in transmitting or receiving is entering rx mode
-        self.rx();
     }
 
     // IEEE802.15.4 SPECIFICATION Section 6.20.12.5 of the NRF52840 Datasheet
@@ -976,7 +976,7 @@ impl<'p> Radio<'p> {
         self.registers.mode.write(Mode::MODE::IEEE802154_250KBIT);
     }
 
-    fn ieee802154_set_channel_freq(&self, channel: RadioChannel) {
+    fn ieee802154_set_channel_freq(&self, channel: RadioChannel) { //JWINK TODO: Make sure this actually updates the hardware in the event that the radio is off...
         self.registers
             .frequency
             .write(Frequency::FREQUENCY.val(channel as u32));
@@ -1034,7 +1034,7 @@ impl<'p> kernel::hil::radio::RadioConfig for Radio<'p> {
         Ok(())
     }
     fn is_on(&self) -> bool {
-        true
+       self.registers.power.get() != 0
     }
     fn busy(&self) -> bool {
         false
@@ -1052,8 +1052,8 @@ impl<'p> kernel::hil::radio::RadioConfig for Radio<'p> {
     /// PAN ID, TX power, and channel to the specified values, issues
     /// a callback to the config client when done.
     fn config_commit(&self) {
-        self.radio_off();
-        self.radio_initialize();
+        //JWINK -> Previously, this function would restart the physical radio. Because tx_power and channel are the only config parameters that actually affect the hardware,
+        // I've just updated set_tx_power and set_channel to update the radio state without restarting it.
     }
 
     fn set_config_client(&self, _client: &'static dyn radio::ConfigClient) {}
@@ -1104,6 +1104,7 @@ impl<'p> kernel::hil::radio::RadioConfig for Radio<'p> {
             Err(_) => Err(ErrorCode::NOSUPPORT),
             Ok(res) => {
                 self.channel.set(res);
+                self.ieee802154_set_channel_freq(self.channel.get());
                 Ok(())
             }
         }
@@ -1117,6 +1118,7 @@ impl<'p> kernel::hil::radio::RadioConfig for Radio<'p> {
             // Valid transmitting power, propogate success
             Ok(res) => {
                 self.tx_power.set(res);
+                self.set_tx_power();
                 Ok(())
             }
         }
@@ -1143,12 +1145,12 @@ impl<'p> kernel::hil::radio::RadioData for Radio<'p> {
         frame_len: usize,
     ) -> Result<(), (ErrorCode, &'static mut [u8])> {
         if self.tx_buf.is_some() || self.transmitting.get() {
-            return Err((ErrorCode::BUSY, buf));
+            return Err((ErrorCode::BUSY, buf)); 
         } else if radio::PSDU_OFFSET + frame_len >= buf.len() {
             // Not enough room for CRC
             return Err((ErrorCode::SIZE, buf));
         }
-
+        let _radio_manager = GeneralPeripheralManager::new(self);
         buf[MIMIC_PSDU_OFFSET as usize] = (frame_len + radio::MFR_SIZE) as u8;
         self.tx_buf.replace(buf);
 
@@ -1157,8 +1159,51 @@ impl<'p> kernel::hil::radio::RadioData for Radio<'p> {
         self.cca_count.set(0);
         self.cca_be.set(IEEE802154_MIN_BE);
 
-        self.radio_off();
-        self.radio_initialize();
+        let tbuf = self.tx_buf.take().unwrap(); // Unwrap fail = Radio TX Buffer produced an invalid result when setting the DMA pointer.
+         self.tx_buf.replace(self.set_dma_ptr(tbuf));
+
+        //JWINK -> previously radio would be reset entirely here, and go into RXIDLE state
+        // Instead, don't reset the radio, and just check if channel is clear to transmit...
+        self.registers.event_ready.write(Event::READY::CLEAR);
+        self.registers.task_stop.write(Task::ENABLE::SET);
+        self.registers.task_ccastart.write(Task::ENABLE::SET);
+        
+
         Ok(())
     }
 }
+
+/** JWINK PERIPHERAL MANAGER CODE **/
+impl<'p> PeripheralDevice for Radio<'p> {
+    fn before_peripheral_access(&self) { 
+        if self.registers.power.get() == 0 { //Radio starts off, so this guarentees 
+            self.radio_on();
+            self.radio_initialize();
+        }
+     }
+    fn after_peripheral_access(&self) {
+        self.enable_interrupts();
+         if  !self.tx_buf.is_some() && !self.transmitting.get() { // Radio is not trying to transmit anything at the moment
+            if !self.has_rx_subscribers.get() {
+                self.radio_off(); //If there are no RX subscribers, we're free to power off
+                self.rx_cycling.set(false);
+            } else if !self.rx_cycling.get() {
+                self.rx_cycling.set(true);
+                self.rx(); //If there are RX subscribers, then cycle back to Rx mode if we haven't already
+            }
+         } 
+         //debug!("peripheral manager done");
+    }
+}
+
+impl<'p> SubscriptionManager for Radio<'p> {
+    fn subscriber_added(&self) { 
+        let _radio_manager = GeneralPeripheralManager::<Radio<'p>>::new(self);
+        self.has_rx_subscribers.set(true); 
+    }
+    fn subscriber_removed(&self) { 
+        let _radio_manager = GeneralPeripheralManager::<Radio<'p>>::new(self);
+        self.has_rx_subscribers.set(false);
+     }
+}
+

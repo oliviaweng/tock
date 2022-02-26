@@ -3,7 +3,6 @@
 //! Implements a userspace interface for sending and receiving IEEE 802.15.4
 //! frames. Also provides a minimal list-based interface for managing keys and
 //! known link neighbors, which is needed for 802.15.4 security.
-
 use crate::ieee802154::{device, framer};
 use crate::net::ieee802154::{AddressMode, Header, KeyId, MacAddress, PanID, SecurityLevel};
 use crate::net::stream::{decode_bytes, decode_u8, encode_bytes, encode_u8, SResult};
@@ -212,6 +211,8 @@ pub struct RadioDriver<'a> {
 
     /// Used to save result for passing a callback from a deferred call.
     saved_result: OptionalCell<Result<(), ErrorCode>>,
+
+    has_rx_subscriptions: Cell<bool>
 }
 
 impl<'a> RadioDriver<'a> {
@@ -239,6 +240,7 @@ impl<'a> RadioDriver<'a> {
             saved_appid: OptionalCell::empty(),
             saved_result: OptionalCell::empty(),
             handle: OptionalCell::empty(),
+            has_rx_subscriptions: Cell::new(false),
         }
     }
 
@@ -396,6 +398,7 @@ impl<'a> RadioDriver<'a> {
     /// idle and the app has a pending transmission.
     #[inline]
     fn perform_tx_sync(&self, appid: ProcessId) -> Result<(), ErrorCode> {
+        
         self.apps.enter(appid, |app, kerel_data| {
             let (dst_addr, security_needed) = match app.pending_tx.take() {
                 Some(pending_tx) => pending_tx,
@@ -888,6 +891,23 @@ impl SyscallDriver for RadioDriver<'_> {
             }
             _ => CommandReturn::failure(ErrorCode::NOSUPPORT),
         }
+    }
+
+    fn subscription_changed(&self) {
+        let mut has_rx_subscription = false;
+        self.apps.each(|_, _, kernel_data| {
+            if kernel_data.has_upcall(0){
+                has_rx_subscription = true;
+            }
+        });
+        if has_rx_subscription && !self.has_rx_subscriptions.get() {
+            self.has_rx_subscriptions.set(true);
+            self.mac.subscriber_added();
+        } else if !has_rx_subscription && self.has_rx_subscriptions.get() {
+            self.has_rx_subscriptions.set(false);
+            self.mac.subscriber_removed()
+        }
+
     }
 
     fn allocate_grant(&self, processid: ProcessId) -> Result<(), kernel::process::Error> {

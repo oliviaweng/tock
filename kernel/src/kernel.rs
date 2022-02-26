@@ -976,6 +976,12 @@ impl Kernel {
                 // return success. At this point we know the result and clear if
                 // necessary.
                 if rval.is_success() {
+                    resources //JWINK -> Notify driver of a subscription changing, in case they want to manage power.
+                    .syscall_driver_lookup()
+                    .with_driver(driver_number, |driver| match driver {
+                        Some(d) => d.subscription_changed(),
+                        None => {},
+                    });
                     // Only one upcall should exist per tuple. To ensure that
                     // there are no pending upcalls with the same identifier but
                     // with the old function pointer, we clear them now.

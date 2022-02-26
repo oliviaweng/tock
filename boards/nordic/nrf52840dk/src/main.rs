@@ -92,7 +92,7 @@ use nrf52_components::{self, UartChannel, UartPins};
 
 // The nRF52840DK LEDs (see back of board)
 const LED1_PIN: Pin = Pin::P0_13;
-const LED2_PIN: Pin = Pin::P0_14;
+const LED2_PIN: Pin = Pin::P0_14; 
 const LED3_PIN: Pin = Pin::P0_15;
 const LED4_PIN: Pin = Pin::P0_16;
 
@@ -161,7 +161,7 @@ pub struct Platform {
         nrf52840::ble_radio::Radio<'static>,
         VirtualMuxAlarm<'static, nrf52840::rtc::Rtc<'static>>,
     >,
-    ieee802154_radio: &'static capsules::ieee802154::RadioDriver<'static>,
+    ieee802154_radio: &'static capsules::ieee802154::RadioDriver<'static>, 
     button: &'static capsules::button::Button<'static, nrf52840::gpio::GPIOPin<'static>>,
     pconsole: &'static capsules::process_console::ProcessConsole<
         'static,
@@ -297,7 +297,7 @@ pub unsafe fn main() {
         UartChannel::Pins(UartPins::new(UART_RTS, UART_TXD, UART_CTS, UART_RXD))
     };
 
-    let board_kernel = static_init!(kernel::Kernel, kernel::Kernel::new(&PROCESSES));
+    let board_kernel = static_init!(kernel::Kernel, kernel::Kernel::new(&PROCESSES)); 
 
     let gpio = components::gpio::GpioComponent::new(
         board_kernel,
@@ -462,10 +462,10 @@ pub unsafe fn main() {
     let serial_num = nrf52840::ficr::FICR_INSTANCE.address();
     let serial_num_bottom_16 = serial_num[0] as u16 + ((serial_num[1] as u16) << 8);
     let src_mac_from_serial_num: MacAddress = MacAddress::Short(serial_num_bottom_16);
-    let (ieee802154_radio, mux_mac) = components::ieee802154::Ieee802154Component::new(
+    let (ieee802154_radio, mux_mac) = components::ieee802154::Ieee802154Component::new( 
         board_kernel,
         capsules::ieee802154::DRIVER_NUM,
-        &base_peripherals.ieee802154_radio,
+        &base_peripherals.ieee802154_radio, 
         aes_mux,
         PAN_ID,
         serial_num_bottom_16,
@@ -475,6 +475,7 @@ pub unsafe fn main() {
         nrf52840::ieee802154_radio::Radio,
         nrf52840::aes::AesECB<'static>
     ));
+    base_peripherals.ieee802154_radio.radio_off(); //Initialize radio to off for maximum energy efficiency. PeripheralManager can handle power state if the radio is actually needed.
 
     let local_ip_ifaces = static_init!(
         [IPAddr; 3],
@@ -689,7 +690,7 @@ pub unsafe fn main() {
     };
 
     let _ = platform.pconsole.start();
-    debug!("Initialization complete. Entering main loop\r");
+    debug!("Initialization complete. Entering main loop :)\r");
     debug!("{}", &nrf52840::ficr::FICR_INSTANCE);
 
     // alarm_test_component.run();

@@ -302,4 +302,7 @@ impl<'a> device::MacDevice<'a> for MacUser<'a> {
             },
         }
     }
+
+    fn subscriber_added(&self) { self.mux.mac.subscriber_added(); }
+    fn subscriber_removed(&self) { self.mux.mac.subscriber_removed(); }
 }

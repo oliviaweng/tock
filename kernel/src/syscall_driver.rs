@@ -80,7 +80,6 @@ use crate::process;
 use crate::process::ProcessId;
 use crate::processbuffer::UserspaceReadableProcessBuffer;
 use crate::syscall::SyscallReturn;
-
 /// Possible return values of a `command` driver method, as specified
 /// in TRD104.
 ///
@@ -198,6 +197,10 @@ pub trait SyscallDriver {
     ) -> CommandReturn {
         CommandReturn::failure(ErrorCode::NOSUPPORT)
     }
+
+
+    //JWINK -> Optionally, let drivers handle the case when subscriptions change. In the case of the radio, it can be powered off if no applications are subscribed to it.
+    fn subscription_changed(&self) {}
 
     /// System call for a process to pass a buffer (a
     /// UserspaceReadableProcessBuffer) to the kernel that the kernel can either

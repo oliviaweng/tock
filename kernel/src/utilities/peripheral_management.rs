@@ -237,3 +237,45 @@ where
             .after_peripheral_access(self.clock, self.registers);
     }
 }
+
+
+
+//JWINK -> More generalized peripheral manager
+pub trait PeripheralDevice {
+    fn before_peripheral_access(&self);
+    fn after_peripheral_access(&self);
+}
+
+pub struct GeneralPeripheralManager<'a, T>
+where 
+    T: 'a + PeripheralDevice
+{
+    pub device: &'a T,
+}
+
+impl<'a, T> GeneralPeripheralManager<'a, T>
+where 
+    T: 'a + PeripheralDevice
+{
+    pub fn new(device: &'a T) -> GeneralPeripheralManager<'a, T> {
+        device.before_peripheral_access();
+        GeneralPeripheralManager {
+            device,
+        }
+    }
+}
+
+impl<'a, T> Drop for GeneralPeripheralManager<'a, T> 
+where 
+    T: 'a + PeripheralDevice
+{
+    fn drop(&mut self) {
+        self.device.after_peripheral_access();
+    }
+}
+
+
+pub trait SubscriptionManager {
+    fn subscriber_added(&self) {}
+    fn subscriber_removed(&self) {}
+}

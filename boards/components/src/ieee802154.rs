@@ -31,6 +31,7 @@ use kernel::dynamic_deferred_call::DynamicDeferredCall;
 use kernel::hil::radio;
 use kernel::hil::symmetric_encryption::{self, AES128Ctr, AES128, AES128CBC, AES128CCM, AES128ECB};
 use kernel::{create_capability, static_init, static_init_half};
+use kernel::utilities::peripheral_management::{SubscriptionManager};
 
 // Setup static space for the objects.
 #[macro_export]
@@ -55,7 +56,7 @@ macro_rules! ieee802154_component_helper {
 }
 
 pub struct Ieee802154Component<
-    R: 'static + kernel::hil::radio::Radio,
+    R: 'static + kernel::hil::radio::Radio + SubscriptionManager,
     A: 'static + AES128<'static> + AES128Ctr + AES128CBC + AES128ECB,
 > {
     board_kernel: &'static kernel::Kernel,
@@ -68,7 +69,7 @@ pub struct Ieee802154Component<
 }
 
 impl<
-        R: 'static + kernel::hil::radio::Radio,
+        R: 'static + kernel::hil::radio::Radio + SubscriptionManager,
         A: 'static + AES128<'static> + AES128Ctr + AES128CBC + AES128ECB,
     > Ieee802154Component<R, A>
 {
@@ -104,7 +105,7 @@ const CRYPT_SIZE: usize = 3 * symmetric_encryption::AES128_BLOCK_SIZE + radio::M
 static mut CRYPT_BUF: [u8; CRYPT_SIZE] = [0x00; CRYPT_SIZE];
 
 impl<
-        R: 'static + kernel::hil::radio::Radio,
+        R: 'static + kernel::hil::radio::Radio + SubscriptionManager,
         A: 'static + AES128<'static> + AES128Ctr + AES128CBC + AES128ECB,
     > Component for Ieee802154Component<R, A>
 {
@@ -177,7 +178,7 @@ impl<
                 userspace_mac,
                 self.board_kernel.create_grant(self.driver_num, &grant_cap),
                 &mut RADIO_BUF,
-                self.deferred_caller,
+                self.deferred_caller, 
             )
         );
 

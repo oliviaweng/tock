@@ -70,7 +70,6 @@
 // TODO: Sending beacon frames
 // TODO: Channel scanning
 //
-
 use crate::ieee802154::device::{MacDevice, RxClient, TxClient};
 use crate::ieee802154::mac::Mac;
 use crate::net::ieee802154::{
@@ -784,6 +783,9 @@ impl<'a, M: Mac, A: AES128CCM<'a>> MacDevice<'a> for Framer<'a, M, A> {
             }
         }
     }
+
+    fn subscriber_added(&self) { self.mac.subscriber_added(); }
+    fn subscriber_removed(&self) { self.mac.subscriber_removed(); }
 }
 
 impl<'a, M: Mac, A: AES128CCM<'a>> radio::TxClient for Framer<'a, M, A> {
