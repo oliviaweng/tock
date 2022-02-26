@@ -1176,9 +1176,9 @@ impl<'p> kernel::hil::radio::RadioData for Radio<'p> {
 /** JWINK PERIPHERAL MANAGER CODE **/
 impl<'p> PeripheralDevice for Radio<'p> {
     fn before_peripheral_access(&self) { 
-        if self.registers.power.get() == 0 { //Radio starts off, so this guarentees 
+        if self.registers.power.get() == 0 { 
             self.radio_on();
-            self.radio_initialize();
+            self.radio_initialize(); //Radio starts off, so this is guarenteed to get triggered
         }
      }
     fn after_peripheral_access(&self) {
