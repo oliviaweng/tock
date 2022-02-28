@@ -1,6 +1,6 @@
 //! IEEE 802.15.4 radio driver for nRF52
 
-//use kernel::debug; //JWINK import for debugging
+use kernel::debug; //JWINK import for debugging
 use core::cell::Cell;
 use core::convert::TryFrom;
 use kernel;
@@ -755,14 +755,14 @@ impl<'p> Radio<'p> {
 
     fn radio_on(&self) {
         // reset and enable power
-        //debug!("RADIO ON");
+        debug!("Turning radio on.");
         self.registers.power.write(Task::ENABLE::CLEAR);
         self.registers.power.write(Task::ENABLE::SET);
     }
 
     pub fn radio_off(&self) {
         self.registers.power.write(Task::ENABLE::CLEAR);
-        //debug!("RADIO OFF");
+        debug!("Turning radio off.");
     }
 
     fn set_tx_power(&self) {
@@ -1176,12 +1176,14 @@ impl<'p> kernel::hil::radio::RadioData for Radio<'p> {
 /** JWINK PERIPHERAL MANAGER CODE **/
 impl<'p> PeripheralDevice for Radio<'p> {
     fn before_peripheral_access(&self) { 
+        debug!("Peripheral manager setting up.");
         if self.registers.power.get() == 0 { 
             self.radio_on();
             self.radio_initialize(); //Radio starts off, so this is guarenteed to get triggered
         }
      }
     fn after_peripheral_access(&self) {
+        debug!("Peripheral manager cleaning up.");
         self.enable_interrupts();
          if  !self.tx_buf.is_some() && !self.transmitting.get() { // Radio is not trying to transmit anything at the moment
             if !self.has_rx_subscribers.get() {
