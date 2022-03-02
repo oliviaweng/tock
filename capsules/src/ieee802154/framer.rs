@@ -784,6 +784,7 @@ impl<'a, M: Mac, A: AES128CCM<'a>> MacDevice<'a> for Framer<'a, M, A> {
         }
     }
 
+    //JWINK -> Pass subscription events down to lower-level driver
     fn subscriber_added(&self) { self.mac.subscriber_added(); }
     fn subscriber_removed(&self) { self.mac.subscriber_removed(); }
 }

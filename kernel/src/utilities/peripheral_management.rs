@@ -240,12 +240,14 @@ where
 
 
 
-//JWINK -> More generalized peripheral manager
+// JWINK -> Implementation begins here:
+// PeripheralDevice trait to be implemented by drivers, with before/after_peripheral_access functions defining setup/cleanup code.
 pub trait PeripheralDevice {
     fn before_peripheral_access(&self);
     fn after_peripheral_access(&self);
 }
 
+// JWINK -> GeneralPeripheralManager wraps a generic PeripheralDevice object, calls before_peripheral_access upon creation and after_peripheral_access upon drop.
 pub struct GeneralPeripheralManager<'a, T>
 where 
     T: 'a + PeripheralDevice
@@ -274,7 +276,9 @@ where
     }
 }
 
-
+// JWINK -> SubscriptionManager trait defines functions to be used to handle subscription changes for multi-level drivers such as the radio.
+// The kernel will inform only the highest-level driver of subscription events, but action is needed in the lowest-level driver,
+// so this trait exists for the driver stack to pass information down. 
 pub trait SubscriptionManager {
     fn subscriber_added(&self) {}
     fn subscriber_removed(&self) {}

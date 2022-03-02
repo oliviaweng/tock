@@ -536,7 +536,8 @@ impl<'a> GrantKernelData<'a> {
         )
     }
 
-    //JWINK -> Allow drivers to check if a specified upcall currently exists, so they can manage power depending on whether or not applications are using them. 
+    //JWINK -> Allow drivers to check if a specified upcall (AKA subscription) currently exists, 
+    // so they can manage power depending on whether or not applications are using the underlying hardware. 
     pub fn has_upcall(&self, i: usize) -> bool {
         match self.upcalls[i].fn_ptr {
             Some(_) => true,

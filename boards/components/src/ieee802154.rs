@@ -31,6 +31,8 @@ use kernel::dynamic_deferred_call::DynamicDeferredCall;
 use kernel::hil::radio;
 use kernel::hil::symmetric_encryption::{self, AES128Ctr, AES128, AES128CBC, AES128CCM, AES128ECB};
 use kernel::{create_capability, static_init, static_init_half};
+
+//JWINK -> Import SubscriptionManager
 use kernel::utilities::peripheral_management::{SubscriptionManager};
 
 // Setup static space for the objects.
@@ -55,7 +57,10 @@ macro_rules! ieee802154_component_helper {
     };};
 }
 
+
 pub struct Ieee802154Component<
+    //JWINK -> Inform components that the radio also implements the SubscriptionManager trait, so subscription events can be passed
+    // down to the lowest level radio driver.
     R: 'static + kernel::hil::radio::Radio + SubscriptionManager,
     A: 'static + AES128<'static> + AES128Ctr + AES128CBC + AES128ECB,
 > {
@@ -69,6 +74,8 @@ pub struct Ieee802154Component<
 }
 
 impl<
+        //JWINK -> Inform components that the radio also implements the SubscriptionManager trait, so subscription events can be passed
+        // down to the lowest level radio driver.
         R: 'static + kernel::hil::radio::Radio + SubscriptionManager,
         A: 'static + AES128<'static> + AES128Ctr + AES128CBC + AES128ECB,
     > Ieee802154Component<R, A>
@@ -105,6 +112,8 @@ const CRYPT_SIZE: usize = 3 * symmetric_encryption::AES128_BLOCK_SIZE + radio::M
 static mut CRYPT_BUF: [u8; CRYPT_SIZE] = [0x00; CRYPT_SIZE];
 
 impl<
+        //JWINK -> Inform components that the radio also implements the SubscriptionManager trait, so subscription events can be passed
+        // down to the lowest level radio driver.
         R: 'static + kernel::hil::radio::Radio + SubscriptionManager,
         A: 'static + AES128<'static> + AES128Ctr + AES128CBC + AES128ECB,
     > Component for Ieee802154Component<R, A>

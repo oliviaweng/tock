@@ -475,7 +475,10 @@ pub unsafe fn main() {
         nrf52840::ieee802154_radio::Radio,
         nrf52840::aes::AesECB<'static>
     ));
-    base_peripherals.ieee802154_radio.radio_off(); //Initialize radio to off for maximum energy efficiency. PeripheralManager can handle power state if the radio is actually needed.
+
+    //JWINK -> After radio has been initialized, turn it off for maximum power savings.
+    // This can be done because PeripheralManager guarentees power will be turned back on when necessary.
+    base_peripherals.ieee802154_radio.radio_off(); 
 
     let local_ip_ifaces = static_init!(
         [IPAddr; 3],

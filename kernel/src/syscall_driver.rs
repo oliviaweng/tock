@@ -199,7 +199,8 @@ pub trait SyscallDriver {
     }
 
 
-    //JWINK -> Optionally, let drivers handle the case when subscriptions change. In the case of the radio, it can be powered off if no applications are subscribed to it.
+    //JWINK -> Define function for the kernel to call when an application subscribes/unsubscribes from a driver's events.
+    // Default implementation is empty, drivers can optionally implement this or ignore it.
     fn subscription_changed(&self) {}
 
     /// System call for a process to pass a buffer (a

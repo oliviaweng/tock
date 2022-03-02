@@ -62,13 +62,14 @@ pub trait Mac {
         frame_len: usize,
     ) -> Result<(), (ErrorCode, &'static mut [u8])>;
 
+    //JWINK -> Add these functions to Mac trait as well to forward subscription information to lower-level drivers.
     fn subscriber_added(&self) {}
     fn subscriber_removed(&self) {}
 }
 
-
+//JWINK -> Add SubscriptionManager to radio definition so AwakeMac can pass events to the lowest-level driver.
 pub trait Radio: radio::Radio + SubscriptionManager {} 
-impl<T: radio::Radio + SubscriptionManager> Radio for T {} //JWINK
+impl<T: radio::Radio + SubscriptionManager> Radio for T {} 
 
 ///
 /// Default implementation of a Mac layer. Acts as a pass-through between a MacDevice
@@ -154,6 +155,7 @@ impl<R: Radio> Mac for AwakeMac<'_, R> {
         self.radio.transmit(full_mac_frame, frame_len)
     }
 
+    //JWINK -> forward event data to the lowest-level radio driver for power management.
     fn subscriber_added(&self) { self.radio.subscriber_added(); }
     fn subscriber_removed(&self) { self.radio.subscriber_removed(); }
 }

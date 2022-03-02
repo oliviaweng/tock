@@ -976,7 +976,10 @@ impl Kernel {
                 // return success. At this point we know the result and clear if
                 // necessary.
                 if rval.is_success() {
-                    resources //JWINK -> Notify driver of a subscription changing, in case they want to manage power.
+
+                    //JWINK -> If a driver's subscriptions are successfully changed, notify driver in 
+                    // case they want to manage power.
+                    resources 
                     .syscall_driver_lookup()
                     .with_driver(driver_number, |driver| match driver {
                         Some(d) => d.subscription_changed(),

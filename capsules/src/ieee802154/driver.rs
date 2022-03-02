@@ -212,6 +212,8 @@ pub struct RadioDriver<'a> {
     /// Used to save result for passing a callback from a deferred call.
     saved_result: OptionalCell<Result<(), ErrorCode>>,
 
+
+    //JWINK -> Add this variable to store whether or not the radio currently has any Rx subscribers
     has_rx_subscriptions: Cell<bool>
 }
 
@@ -240,6 +242,7 @@ impl<'a> RadioDriver<'a> {
             saved_appid: OptionalCell::empty(),
             saved_result: OptionalCell::empty(),
             handle: OptionalCell::empty(),
+            //JWINK -> Default to false
             has_rx_subscriptions: Cell::new(false),
         }
     }
@@ -893,13 +896,18 @@ impl SyscallDriver for RadioDriver<'_> {
         }
     }
 
+    //JWINK -> Called by the kernel when an application subscribes/unsubscribes to any radio events.
     fn subscription_changed(&self) {
+        //Check if there are any current Rx subscribers
         let mut has_rx_subscription = false;
         self.apps.each(|_, _, kernel_data| {
             if kernel_data.has_upcall(0){
                 has_rx_subscription = true;
             }
         });
+
+        //If there aren't, but previously were, or if there are, but previously weren't, then inform
+        // the lower-level drivers. 
         if has_rx_subscription && !self.has_rx_subscriptions.get() {
             self.has_rx_subscriptions.set(true);
             self.mac.subscriber_added();

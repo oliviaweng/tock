@@ -73,6 +73,8 @@ pub trait MacDevice<'a> {
     /// transmission process fails, the buffer inside the frame is returned so
     /// that it can be re-used.
     fn transmit(&self, frame: Frame) -> Result<(), (ErrorCode, &'static mut [u8])>;
+
+    //JWINK -> Add these functions to the MacDevice trait too, for the mid-level drivers to use.
     fn subscriber_added(&self) {}
     fn subscriber_removed(&self) {}
 }
