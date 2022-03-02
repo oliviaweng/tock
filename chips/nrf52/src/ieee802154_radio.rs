@@ -3,7 +3,7 @@
 use core::cell::Cell;
 use core::convert::TryFrom;
 use kernel;
-use kernel::hil::radio::{self, PowerClient};
+use kernel::hil::radio::{self, PowerClient, RadioConfig, RadioData};
 use kernel::hil::time::{Alarm, AlarmClient};
 use kernel::utilities::cells::{OptionalCell, TakeCell};
 use kernel::utilities::registers::interfaces::{Readable, Writeable};
@@ -1166,86 +1166,1067 @@ impl<'p> kernel::hil::radio::RadioData for Radio<'p> {
 // Radio states as defined in the nrf52840dk's product spec
 // section 6.20.5 Radio states
 // The following states are the state 'S' in RadioStateMachine<S>
-struct DISABLED; // default state at radio startup
-struct RXRU;
-struct RXIDLE;
-struct RX;
-struct TXRU;
-struct TXIDLE;
-struct TX;
-struct RXDISABLE;
-struct TXDISABLE;
+/// default state at radio startup
+struct Disabled;
+struct RxRu;
+struct RxIdle;
+struct Rx;
+struct TxRu;
+struct TxIdle;
+struct Tx;
+struct RxDisable;
+struct TxDisable;
 
+/// Radio state machine that encodes the Radio states described in
+/// the nrf52840 product spec section '6.20.5 Radio states' as type S.
 struct RadioStateMachine<'a, S> {
     radio: Radio<'a>,
     state: S,
 }
 
 // The Radio state machine starts in the 'DISABLED' state
-impl<'a> RadioStateMachine<'a, DISABLED> {
+impl<'a> RadioStateMachine<'a, Disabled> {
+    /// A radio can only be created from the DISABLED state
     pub const fn new() -> Self {
         Self {
             radio: Radio::new(),
-            state: DISABLED,
+            state: Disabled,
         }
     }
-    pub fn handle_interrupt(self) -> RadioStateMachineWrapper<'a> {
-        // TODO: Fix - just returns itself
-        // TODO: Handle the state transitions here
-        // Reimplement Radio's handle_interrupt here using
-        // our pretty state machine
-        // can do val.into() stuff here to handle state transitions
-        RadioStateMachineWrapper::DISABLED(self)
+    fn state_transition(self) -> RadioStateMachineWrapper<'a> {
+        match self.radio.registers.state.get() {
+            nrf5x::constants::RADIO_STATE_TXRU => RadioStateMachineWrapper::TxRu(self.into()),
+            nrf5x::constants::RADIO_STATE_TXIDLE => {
+                let txru_radio = RadioStateMachine::<TxRu>::from(self);
+                RadioStateMachineWrapper::TxIdle(txru_radio.into())
+            }
+            nrf5x::constants::RADIO_STATE_TXDISABLE => {
+                let txru_radio = RadioStateMachine::<TxRu>::from(self);
+                RadioStateMachineWrapper::TxDisable(txru_radio.into())
+            }
+            nrf5x::constants::RADIO_STATE_TX => {
+                let txru_radio = RadioStateMachine::<TxRu>::from(self);
+                let txidle_radio = RadioStateMachine::<TxIdle>::from(txru_radio);
+                RadioStateMachineWrapper::Tx(txidle_radio.into())
+            }
+            nrf5x::constants::RADIO_STATE_RXRU => RadioStateMachineWrapper::RxRu(self.into()),
+            nrf5x::constants::RADIO_STATE_RXIDLE => {
+                let rxru_radio = RadioStateMachine::<RxRu>::from(self);
+                RadioStateMachineWrapper::RxIdle(rxru_radio.into())
+            }
+            nrf5x::constants::RADIO_STATE_RXDISABLE => {
+                let rxru_radio = RadioStateMachine::<RxRu>::from(self);
+                RadioStateMachineWrapper::RxDisable(rxru_radio.into())
+            }
+            nrf5x::constants::RADIO_STATE_RX => {
+                let rxru_radio = RadioStateMachine::<RxRu>::from(self);
+                let rxidle_radio = RadioStateMachine::<RxIdle>::from(rxru_radio);
+                RadioStateMachineWrapper::Rx(rxidle_radio.into())
+            }
+            _ => RadioStateMachineWrapper::Disabled(self),
+        }
     }
 }
 
-impl<'a> From<RadioStateMachine<'a, DISABLED>> for RadioStateMachine<'a, TXRU> {
-    fn from(r: RadioStateMachine<'a, DISABLED>) -> Self {
+impl<'a> RadioStateMachine<'a, RxRu> {
+    fn state_transition(self) -> RadioStateMachineWrapper<'a> {
+        match self.radio.registers.state.get() {
+            nrf5x::constants::RADIO_STATE_TXRU => {
+                let rxdisable_radio = RadioStateMachine::<RxDisable>::from(self);
+                let disabled_radio = RadioStateMachine::<Disabled>::from(rxdisable_radio);
+                RadioStateMachineWrapper::TxRu(disabled_radio.into())
+            }
+            nrf5x::constants::RADIO_STATE_TXIDLE => {
+                let rxdisable_radio = RadioStateMachine::<RxDisable>::from(self);
+                let disabled_radio = RadioStateMachine::<Disabled>::from(rxdisable_radio);
+                let txru_radio = RadioStateMachine::<TxRu>::from(disabled_radio);
+                RadioStateMachineWrapper::TxIdle(txru_radio.into())
+            }
+            nrf5x::constants::RADIO_STATE_TXDISABLE => {
+                let rxdisable_radio = RadioStateMachine::<RxDisable>::from(self);
+                let disabled_radio = RadioStateMachine::<Disabled>::from(rxdisable_radio);
+                let txru_radio = RadioStateMachine::<TxRu>::from(disabled_radio);
+                RadioStateMachineWrapper::TxDisable(txru_radio.into())
+            }
+            nrf5x::constants::RADIO_STATE_TX => {
+                let rxdisable_radio = RadioStateMachine::<RxDisable>::from(self);
+                let disabled_radio = RadioStateMachine::<Disabled>::from(rxdisable_radio);
+                let txru_radio = RadioStateMachine::<TxRu>::from(disabled_radio);
+                let txidle_radio = RadioStateMachine::<TxIdle>::from(txru_radio);
+                RadioStateMachineWrapper::Tx(txidle_radio.into())
+            }
+            nrf5x::constants::RADIO_STATE_RXIDLE => RadioStateMachineWrapper::RxIdle(self.into()),
+            nrf5x::constants::RADIO_STATE_RXDISABLE => {
+                RadioStateMachineWrapper::RxDisable(self.into())
+            }
+            nrf5x::constants::RADIO_STATE_RX => {
+                let rxidle_radio = RadioStateMachine::<RxIdle>::from(self);
+                RadioStateMachineWrapper::Rx(rxidle_radio.into())
+            }
+            nrf5x::constants::RADIO_STATE_DISABLE => {
+                let rxdisable_radio = RadioStateMachine::<RxDisable>::from(self);
+                RadioStateMachineWrapper::Disabled(rxdisable_radio.into())
+            }
+            _ => RadioStateMachineWrapper::RxRu(self.into()),
+        }
+    }
+}
+
+impl<'a> RadioStateMachine<'a, RxIdle> {
+    fn state_transition(self) -> RadioStateMachineWrapper<'a> {
+        match self.radio.registers.state.get() {
+            nrf5x::constants::RADIO_STATE_TXRU => RadioStateMachineWrapper::TxRu(self.into()),
+            nrf5x::constants::RADIO_STATE_TXIDLE => {
+                let txru_radio = RadioStateMachine::<TxRu>::from(self);
+                RadioStateMachineWrapper::TxIdle(txru_radio.into())
+            }
+            nrf5x::constants::RADIO_STATE_TXDISABLE => {
+                let txru_radio = RadioStateMachine::<TxRu>::from(self);
+                RadioStateMachineWrapper::TxDisable(txru_radio.into())
+            }
+            nrf5x::constants::RADIO_STATE_TX => {
+                let txru_radio = RadioStateMachine::<TxRu>::from(self);
+                let txidle_radio = RadioStateMachine::<TxIdle>::from(txru_radio);
+                RadioStateMachineWrapper::Tx(txidle_radio.into())
+            }
+            nrf5x::constants::RADIO_STATE_RXRU => RadioStateMachineWrapper::RxRu(self.into()),
+            nrf5x::constants::RADIO_STATE_RXDISABLE => {
+                RadioStateMachineWrapper::RxDisable(self.into())
+            }
+            nrf5x::constants::RADIO_STATE_RX => RadioStateMachineWrapper::Rx(self.into()),
+            nrf5x::constants::RADIO_STATE_DISABLE => {
+                let rxdisable_radio = RadioStateMachine::<RxDisable>::from(self);
+                RadioStateMachineWrapper::Disabled(rxdisable_radio.into())
+            }
+            _ => RadioStateMachineWrapper::RxIdle(self.into()),
+        }
+    }
+}
+
+impl<'a> RadioStateMachine<'a, Rx> {
+    fn state_transition(self) -> RadioStateMachineWrapper<'a> {
+        match self.radio.registers.state.get() {
+            nrf5x::constants::RADIO_STATE_TXRU => {
+                let rxidle_radio = RadioStateMachine::<RxIdle>::from(self);
+                RadioStateMachineWrapper::TxRu(rxidle_radio.into())
+            }
+            nrf5x::constants::RADIO_STATE_TXIDLE => {
+                let rxidle_radio = RadioStateMachine::<RxIdle>::from(self);
+                let txru_radio = RadioStateMachine::<TxRu>::from(rxidle_radio);
+                RadioStateMachineWrapper::TxIdle(txru_radio.into())
+            }
+            nrf5x::constants::RADIO_STATE_TXDISABLE => {
+                let rxidle_radio = RadioStateMachine::<RxIdle>::from(self);
+                let txru_radio = RadioStateMachine::<TxRu>::from(rxidle_radio);
+                RadioStateMachineWrapper::TxDisable(txru_radio.into())
+            }
+            nrf5x::constants::RADIO_STATE_TX => {
+                let rxidle_radio = RadioStateMachine::<RxIdle>::from(self);
+                let txru_radio = RadioStateMachine::<TxRu>::from(rxidle_radio);
+                let txidle_radio = RadioStateMachine::<TxIdle>::from(txru_radio);
+                RadioStateMachineWrapper::Tx(txidle_radio.into())
+            }
+            nrf5x::constants::RADIO_STATE_RXRU => {
+                let rxidle_radio = RadioStateMachine::<RxIdle>::from(self);
+                RadioStateMachineWrapper::RxRu(rxidle_radio.into())
+            }
+            nrf5x::constants::RADIO_STATE_RXIDLE => RadioStateMachineWrapper::RxIdle(self.into()),
+            nrf5x::constants::RADIO_STATE_RXDISABLE => {
+                RadioStateMachineWrapper::RxDisable(self.into())
+            }
+            nrf5x::constants::RADIO_STATE_DISABLE => {
+                let rxdisable_radio = RadioStateMachine::<RxDisable>::from(self);
+                RadioStateMachineWrapper::Disabled(rxdisable_radio.into())
+            }
+            _ => RadioStateMachineWrapper::Rx(self.into()),
+        }
+    }
+}
+
+impl<'a> RadioStateMachine<'a, TxRu> {
+    fn state_transition(self) -> RadioStateMachineWrapper<'a> {
+        match self.radio.registers.state.get() {
+            nrf5x::constants::RADIO_STATE_TXIDLE => RadioStateMachineWrapper::TxIdle(self.into()),
+            nrf5x::constants::RADIO_STATE_TXDISABLE => {
+                RadioStateMachineWrapper::TxDisable(self.into())
+            }
+            nrf5x::constants::RADIO_STATE_TX => {
+                let txidle_radio = RadioStateMachine::<TxIdle>::from(self);
+                RadioStateMachineWrapper::Tx(txidle_radio.into())
+            }
+            nrf5x::constants::RADIO_STATE_RXRU => {
+                let txidle_radio = RadioStateMachine::<TxIdle>::from(self);
+                RadioStateMachineWrapper::RxRu(txidle_radio.into())
+            }
+            nrf5x::constants::RADIO_STATE_RXIDLE => {
+                let txidle_radio = RadioStateMachine::<TxIdle>::from(self);
+                let rxru_radio = RadioStateMachine::<RxRu>::from(txidle_radio);
+                RadioStateMachineWrapper::RxIdle(rxru_radio.into())
+            }
+            nrf5x::constants::RADIO_STATE_RXDISABLE => {
+                let txidle_radio = RadioStateMachine::<TxIdle>::from(self);
+                let rxru_radio = RadioStateMachine::<RxRu>::from(txidle_radio);
+                RadioStateMachineWrapper::RxDisable(rxru_radio.into())
+            }
+            nrf5x::constants::RADIO_STATE_RX => {
+                let txidle_radio = RadioStateMachine::<TxIdle>::from(self);
+                let rxru_radio = RadioStateMachine::<RxRu>::from(txidle_radio);
+                let rxidle_radio = RadioStateMachine::<RxIdle>::from(rxru_radio);
+                RadioStateMachineWrapper::Rx(rxidle_radio.into())
+            }
+            nrf5x::constants::RADIO_STATE_DISABLE => {
+                let txdisable_radio = RadioStateMachine::<TxDisable>::from(self);
+                RadioStateMachineWrapper::Disabled(txdisable_radio.into())
+            }
+            _ => RadioStateMachineWrapper::TxRu(self.into()),
+        }
+    }
+}
+
+impl<'a> RadioStateMachine<'a, TxIdle> {
+    fn state_transition(self) -> RadioStateMachineWrapper<'a> {
+        match self.radio.registers.state.get() {
+            nrf5x::constants::RADIO_STATE_TXRU => RadioStateMachineWrapper::TxRu(self.into()),
+            nrf5x::constants::RADIO_STATE_TXDISABLE => {
+                RadioStateMachineWrapper::TxDisable(self.into())
+            }
+            nrf5x::constants::RADIO_STATE_TX => {
+                let txidle_radio = RadioStateMachine::<TxIdle>::from(self);
+                RadioStateMachineWrapper::Tx(txidle_radio.into())
+            }
+            nrf5x::constants::RADIO_STATE_RXRU => RadioStateMachineWrapper::RxRu(self.into()),
+            nrf5x::constants::RADIO_STATE_RXIDLE => {
+                let rxru_radio = RadioStateMachine::<RxRu>::from(self);
+                RadioStateMachineWrapper::RxIdle(rxru_radio.into())
+            }
+            nrf5x::constants::RADIO_STATE_RXDISABLE => {
+                let rxru_radio = RadioStateMachine::<RxRu>::from(self);
+                RadioStateMachineWrapper::RxDisable(rxru_radio.into())
+            }
+            nrf5x::constants::RADIO_STATE_RX => {
+                let rxru_radio = RadioStateMachine::<RxRu>::from(self);
+                let rxidle_radio = RadioStateMachine::<RxIdle>::from(rxru_radio);
+                RadioStateMachineWrapper::Rx(rxidle_radio.into())
+            }
+            nrf5x::constants::RADIO_STATE_DISABLE => {
+                let txdisable_radio = RadioStateMachine::<TxDisable>::from(self);
+                RadioStateMachineWrapper::Disabled(txdisable_radio.into())
+            }
+            _ => RadioStateMachineWrapper::TxIdle(self.into()),
+        }
+    }
+}
+
+impl<'a> RadioStateMachine<'a, Tx> {
+    fn state_transition(self) -> RadioStateMachineWrapper<'a> {
+        match self.radio.registers.state.get() {
+            nrf5x::constants::RADIO_STATE_TXRU => {
+                let txidle_radio = RadioStateMachine::<TxIdle>::from(self);
+                RadioStateMachineWrapper::TxRu(txidle_radio.into())
+            }
+            nrf5x::constants::RADIO_STATE_TXIDLE => RadioStateMachineWrapper::TxIdle(self.into()),
+            nrf5x::constants::RADIO_STATE_TXDISABLE => {
+                RadioStateMachineWrapper::TxDisable(self.into())
+            }
+            nrf5x::constants::RADIO_STATE_RXRU => {
+                let txidle_radio = RadioStateMachine::<TxIdle>::from(self);
+                RadioStateMachineWrapper::RxRu(txidle_radio.into())
+            }
+            nrf5x::constants::RADIO_STATE_RXIDLE => {
+                let txidle_radio = RadioStateMachine::<TxIdle>::from(self);
+                let rxru_radio = RadioStateMachine::<RxRu>::from(txidle_radio);
+                RadioStateMachineWrapper::RxIdle(rxru_radio.into())
+            }
+            nrf5x::constants::RADIO_STATE_RXDISABLE => {
+                let txidle_radio = RadioStateMachine::<TxIdle>::from(self);
+                let rxru_radio = RadioStateMachine::<RxRu>::from(txidle_radio);
+                RadioStateMachineWrapper::RxDisable(rxru_radio.into())
+            }
+            nrf5x::constants::RADIO_STATE_RX => {
+                let txidle_radio = RadioStateMachine::<TxIdle>::from(self);
+                let rxru_radio = RadioStateMachine::<RxRu>::from(txidle_radio);
+                // The following violates Rust's ownership rules
+                // txidle_radio.radio.rx();
+                let rxidle_radio = RadioStateMachine::<RxIdle>::from(rxru_radio);
+                RadioStateMachineWrapper::Rx(rxidle_radio.into())
+            }
+            nrf5x::constants::RADIO_STATE_DISABLE => {
+                // The following is an example of an invalid state transition that is caught at compile time.
+                // let disabled_radio = RadioStateMachine::<Disabled>::from(tx_radio);
+                let txdisable_radio = RadioStateMachine::<TxDisable>::from(self);
+                RadioStateMachineWrapper::Disabled(txdisable_radio.into())
+            }
+            _ => RadioStateMachineWrapper::Tx(self.into()),
+        }
+    }
+}
+
+impl<'a> RadioStateMachine<'a, RxDisable> {
+    fn state_transition(self) -> RadioStateMachineWrapper<'a> {
+        match self.radio.registers.state.get() {
+            nrf5x::constants::RADIO_STATE_TXRU => {
+                let disabled_radio = RadioStateMachine::<Disabled>::from(self);
+                RadioStateMachineWrapper::TxRu(disabled_radio.into())
+            }
+            nrf5x::constants::RADIO_STATE_TXIDLE => {
+                let disabled_radio = RadioStateMachine::<Disabled>::from(self);
+                let txru_radio = RadioStateMachine::<TxRu>::from(disabled_radio);
+                RadioStateMachineWrapper::TxIdle(txru_radio.into())
+            }
+            nrf5x::constants::RADIO_STATE_TXDISABLE => {
+                let disabled_radio = RadioStateMachine::<Disabled>::from(self);
+                let txru_radio = RadioStateMachine::<TxRu>::from(disabled_radio);
+                RadioStateMachineWrapper::TxDisable(txru_radio.into())
+            }
+            nrf5x::constants::RADIO_STATE_TX => {
+                let disabled_radio = RadioStateMachine::<Disabled>::from(self);
+                let txru_radio = RadioStateMachine::<TxRu>::from(disabled_radio);
+                let txidle_radio = RadioStateMachine::<TxIdle>::from(txru_radio);
+                RadioStateMachineWrapper::Tx(txidle_radio.into())
+            }
+            nrf5x::constants::RADIO_STATE_RXRU => {
+                let disabled_radio = RadioStateMachine::<Disabled>::from(self);
+                RadioStateMachineWrapper::RxRu(disabled_radio.into())
+            }
+            nrf5x::constants::RADIO_STATE_RXIDLE => {
+                let disabled_radio = RadioStateMachine::<Disabled>::from(self);
+                let rxru_radio = RadioStateMachine::<RxRu>::from(disabled_radio);
+                RadioStateMachineWrapper::RxIdle(rxru_radio.into())
+            }
+            nrf5x::constants::RADIO_STATE_RX => {
+                let disabled_radio = RadioStateMachine::<Disabled>::from(self);
+                let rxru_radio = RadioStateMachine::<RxRu>::from(disabled_radio);
+                let rxidle_radio = RadioStateMachine::<RxIdle>::from(rxru_radio);
+                RadioStateMachineWrapper::Rx(rxidle_radio.into())
+            }
+            nrf5x::constants::RADIO_STATE_DISABLE => {
+                RadioStateMachineWrapper::Disabled(self.into())
+            }
+            _ => RadioStateMachineWrapper::RxDisable(self.into()),
+        }
+    }
+}
+
+impl<'a> RadioStateMachine<'a, TxDisable> {
+    fn state_transition(self) -> RadioStateMachineWrapper<'a> {
+        match self.radio.registers.state.get() {
+            nrf5x::constants::RADIO_STATE_TXRU => {
+                let disabled_radio = RadioStateMachine::<Disabled>::from(self);
+                RadioStateMachineWrapper::TxRu(disabled_radio.into())
+            }
+            nrf5x::constants::RADIO_STATE_TXIDLE => {
+                let disabled_radio = RadioStateMachine::<Disabled>::from(self);
+                let txru_radio = RadioStateMachine::<TxRu>::from(disabled_radio);
+                RadioStateMachineWrapper::TxIdle(txru_radio.into())
+            }
+            nrf5x::constants::RADIO_STATE_TX => {
+                let disabled_radio = RadioStateMachine::<Disabled>::from(self);
+                let txru_radio = RadioStateMachine::<TxRu>::from(disabled_radio);
+                let txidle_radio = RadioStateMachine::<TxIdle>::from(txru_radio);
+                RadioStateMachineWrapper::Tx(txidle_radio.into())
+            }
+            nrf5x::constants::RADIO_STATE_RXRU => {
+                let disabled_radio = RadioStateMachine::<Disabled>::from(self);
+                RadioStateMachineWrapper::RxRu(disabled_radio.into())
+            }
+            nrf5x::constants::RADIO_STATE_RXIDLE => {
+                let disabled_radio = RadioStateMachine::<Disabled>::from(self);
+                let rxru_radio = RadioStateMachine::<RxRu>::from(disabled_radio);
+                RadioStateMachineWrapper::RxIdle(rxru_radio.into())
+            }
+            nrf5x::constants::RADIO_STATE_RXDISABLE => {
+                let disabled_radio = RadioStateMachine::<Disabled>::from(self);
+                let rxru_radio = RadioStateMachine::<RxRu>::from(disabled_radio);
+                RadioStateMachineWrapper::RxDisable(rxru_radio.into())
+            }
+            nrf5x::constants::RADIO_STATE_RX => {
+                let disabled_radio = RadioStateMachine::<Disabled>::from(self);
+                let rxru_radio = RadioStateMachine::<RxRu>::from(disabled_radio);
+                let rxidle_radio = RadioStateMachine::<RxIdle>::from(rxru_radio);
+                RadioStateMachineWrapper::Rx(rxidle_radio.into())
+            }
+            nrf5x::constants::RADIO_STATE_DISABLE => {
+                RadioStateMachineWrapper::Disabled(self.into())
+            }
+            _ => RadioStateMachineWrapper::TxDisable(self.into()),
+        }
+    }
+}
+
+// We implement the From trait for valid state transitions only
+// RxDisable, TxDisable --> Disabled
+impl<'a> From<RadioStateMachine<'a, RxDisable>> for RadioStateMachine<'a, Disabled> {
+    fn from(r: RadioStateMachine<'a, RxDisable>) -> Self {
         RadioStateMachine {
             radio: r.radio,
-            state: TXRU,
+            state: Disabled,
+        }
+    }
+}
+impl<'a> From<RadioStateMachine<'a, TxDisable>> for RadioStateMachine<'a, Disabled> {
+    fn from(r: RadioStateMachine<'a, TxDisable>) -> Self {
+        RadioStateMachine {
+            radio: r.radio,
+            state: Disabled,
+        }
+    }
+}
+// TxRu, TxIdle, Tx --> TxDisable
+impl<'a> From<RadioStateMachine<'a, TxRu>> for RadioStateMachine<'a, TxDisable> {
+    fn from(r: RadioStateMachine<'a, TxRu>) -> Self {
+        RadioStateMachine {
+            radio: r.radio,
+            state: TxDisable,
+        }
+    }
+}
+impl<'a> From<RadioStateMachine<'a, TxIdle>> for RadioStateMachine<'a, TxDisable> {
+    fn from(r: RadioStateMachine<'a, TxIdle>) -> Self {
+        RadioStateMachine {
+            radio: r.radio,
+            state: TxDisable,
+        }
+    }
+}
+impl<'a> From<RadioStateMachine<'a, Tx>> for RadioStateMachine<'a, TxDisable> {
+    fn from(r: RadioStateMachine<'a, Tx>) -> Self {
+        RadioStateMachine {
+            radio: r.radio,
+            state: TxDisable,
+        }
+    }
+}
+// RxRu, RxIdle, Rx --> RxDisable
+impl<'a> From<RadioStateMachine<'a, RxRu>> for RadioStateMachine<'a, RxDisable> {
+    fn from(r: RadioStateMachine<'a, RxRu>) -> Self {
+        RadioStateMachine {
+            radio: r.radio,
+            state: RxDisable,
+        }
+    }
+}
+impl<'a> From<RadioStateMachine<'a, RxIdle>> for RadioStateMachine<'a, RxDisable> {
+    fn from(r: RadioStateMachine<'a, RxIdle>) -> Self {
+        RadioStateMachine {
+            radio: r.radio,
+            state: RxDisable,
+        }
+    }
+}
+impl<'a> From<RadioStateMachine<'a, Rx>> for RadioStateMachine<'a, RxDisable> {
+    fn from(r: RadioStateMachine<'a, Rx>) -> Self {
+        RadioStateMachine {
+            radio: r.radio,
+            state: RxDisable,
+        }
+    }
+}
+// Disabled, TxIdle, RxIdle --> TxRu
+impl<'a> From<RadioStateMachine<'a, Disabled>> for RadioStateMachine<'a, TxRu> {
+    fn from(r: RadioStateMachine<'a, Disabled>) -> Self {
+        RadioStateMachine {
+            radio: r.radio,
+            state: TxRu,
+        }
+    }
+}
+impl<'a> From<RadioStateMachine<'a, TxIdle>> for RadioStateMachine<'a, TxRu> {
+    fn from(r: RadioStateMachine<'a, TxIdle>) -> Self {
+        RadioStateMachine {
+            radio: r.radio,
+            state: TxRu,
+        }
+    }
+}
+impl<'a> From<RadioStateMachine<'a, RxIdle>> for RadioStateMachine<'a, TxRu> {
+    fn from(r: RadioStateMachine<'a, RxIdle>) -> Self {
+        RadioStateMachine {
+            radio: r.radio,
+            state: TxRu,
+        }
+    }
+}
+
+// Disabled, TxIdle, RxIdle --> RxRu
+impl<'a> From<RadioStateMachine<'a, Disabled>> for RadioStateMachine<'a, RxRu> {
+    fn from(r: RadioStateMachine<'a, Disabled>) -> Self {
+        RadioStateMachine {
+            radio: r.radio,
+            state: RxRu,
+        }
+    }
+}
+impl<'a> From<RadioStateMachine<'a, TxIdle>> for RadioStateMachine<'a, RxRu> {
+    fn from(r: RadioStateMachine<'a, TxIdle>) -> Self {
+        RadioStateMachine {
+            radio: r.radio,
+            state: RxRu,
+        }
+    }
+}
+impl<'a> From<RadioStateMachine<'a, RxIdle>> for RadioStateMachine<'a, RxRu> {
+    fn from(r: RadioStateMachine<'a, RxIdle>) -> Self {
+        RadioStateMachine {
+            radio: r.radio,
+            state: RxRu,
+        }
+    }
+}
+// TxRu, Tx--> TxIdle
+impl<'a> From<RadioStateMachine<'a, TxRu>> for RadioStateMachine<'a, TxIdle> {
+    fn from(r: RadioStateMachine<'a, TxRu>) -> Self {
+        RadioStateMachine {
+            radio: r.radio,
+            state: TxIdle,
+        }
+    }
+}
+impl<'a> From<RadioStateMachine<'a, Tx>> for RadioStateMachine<'a, TxIdle> {
+    fn from(r: RadioStateMachine<'a, Tx>) -> Self {
+        RadioStateMachine {
+            radio: r.radio,
+            state: TxIdle,
+        }
+    }
+}
+// RxRu, Rx --> RxIdle
+impl<'a> From<RadioStateMachine<'a, RxRu>> for RadioStateMachine<'a, RxIdle> {
+    fn from(r: RadioStateMachine<'a, RxRu>) -> Self {
+        RadioStateMachine {
+            radio: r.radio,
+            state: RxIdle,
+        }
+    }
+}
+impl<'a> From<RadioStateMachine<'a, Rx>> for RadioStateMachine<'a, RxIdle> {
+    fn from(r: RadioStateMachine<'a, Rx>) -> Self {
+        RadioStateMachine {
+            radio: r.radio,
+            state: RxIdle,
+        }
+    }
+}
+// TxIdle --> Tx
+impl<'a> From<RadioStateMachine<'a, TxIdle>> for RadioStateMachine<'a, Tx> {
+    fn from(r: RadioStateMachine<'a, TxIdle>) -> Self {
+        RadioStateMachine {
+            radio: r.radio,
+            state: Tx,
+        }
+    }
+}
+// RxIdle --> Rx
+impl<'a> From<RadioStateMachine<'a, RxIdle>> for RadioStateMachine<'a, Rx> {
+    fn from(r: RadioStateMachine<'a, RxIdle>) -> Self {
+        RadioStateMachine {
+            radio: r.radio,
+            state: Rx,
         }
     }
 }
 
 enum RadioStateMachineWrapper<'a> {
-    DISABLED(RadioStateMachine<'a, DISABLED>),
+    Disabled(RadioStateMachine<'a, Disabled>),
+    RxRu(RadioStateMachine<'a, RxRu>),
+    RxIdle(RadioStateMachine<'a, RxIdle>),
+    Rx(RadioStateMachine<'a, Rx>),
+    TxRu(RadioStateMachine<'a, TxRu>),
+    TxIdle(RadioStateMachine<'a, TxIdle>),
+    Tx(RadioStateMachine<'a, Tx>),
+    RxDisable(RadioStateMachine<'a, RxDisable>),
+    TxDisable(RadioStateMachine<'a, TxDisable>),
 }
 
-enum RadioEvent {
-    Disable,
-    TxEn,
-    RxEn,
-    Ready,
-    Start,
-    Stop,
-    PhyEnd,
-    End,
-    Payload,
-    Address,
-    Disabled,
-}
-
-impl<'a> RadioStateMachineWrapper<'a> {
-    pub fn handle_interrupt(self) -> Self {
-        match self {
-            RadioStateMachineWrapper::DISABLED(val) => val.handle_interrupt(),
-        }
-    }
-}
-
-struct Ieee802154Radio<'a> {
+pub struct Ieee802154Radio<'a> {
     radio_state_machine: RadioStateMachineWrapper<'a>,
 }
 
 impl<'a> Ieee802154Radio<'a> {
     pub const fn new() -> Self {
+        // Start from the DISABLED state
         Ieee802154Radio {
-            radio_state_machine: RadioStateMachineWrapper::DISABLED(RadioStateMachine::new()),
+            radio_state_machine: RadioStateMachineWrapper::Disabled(RadioStateMachine::new()),
         }
     }
+
+    pub fn set_timer_ref(&self, timer: &'a crate::timer::TimerAlarm<'a>) {
+        // The timer ref should only be set when the radio is initialized,
+        // which is when it's in Disabled state
+        match &self.radio_state_machine {
+            RadioStateMachineWrapper::Disabled(val) => val.radio.set_timer_ref(timer),
+            _ => kernel::debug!("nrf 802.15.4 radio's timer ref can only be set once!"),
+        }
+    }
+
+    pub fn is_enabled(&self) -> bool {
+        // We can check if the radio is enabled or not from any state.
+        match &self.radio_state_machine {
+            RadioStateMachineWrapper::Disabled(val) => val.radio.is_enabled(),
+            RadioStateMachineWrapper::RxRu(val) => val.radio.is_enabled(),
+            RadioStateMachineWrapper::RxIdle(val) => val.radio.is_enabled(),
+            RadioStateMachineWrapper::Rx(val) => val.radio.is_enabled(),
+            RadioStateMachineWrapper::TxRu(val) => val.radio.is_enabled(),
+            RadioStateMachineWrapper::TxIdle(val) => val.radio.is_enabled(),
+            RadioStateMachineWrapper::Tx(val) => val.radio.is_enabled(),
+            RadioStateMachineWrapper::RxDisable(val) => val.radio.is_enabled(),
+            RadioStateMachineWrapper::TxDisable(val) => val.radio.is_enabled(),
+        }
+    }
+
     #[inline(never)]
     pub fn handle_interrupt(mut self) {
-        self.radio_state_machine = self.radio_state_machine.handle_interrupt()
+        // State transitions happen during interrupts, which are triggered by events
+        match self.radio_state_machine {
+            RadioStateMachineWrapper::Disabled(val) => {
+                val.radio.handle_interrupt();
+                self.radio_state_machine = val.state_transition();
+            }
+            RadioStateMachineWrapper::RxRu(val) => {
+                val.radio.handle_interrupt();
+                self.radio_state_machine = val.state_transition();
+            }
+            RadioStateMachineWrapper::RxIdle(val) => {
+                val.radio.handle_interrupt();
+                self.radio_state_machine = val.state_transition();
+            }
+            RadioStateMachineWrapper::Rx(val) => {
+                val.radio.handle_interrupt();
+                self.radio_state_machine = val.state_transition();
+            }
+            RadioStateMachineWrapper::TxRu(val) => {
+                val.radio.handle_interrupt();
+                self.radio_state_machine = val.state_transition();
+            }
+            RadioStateMachineWrapper::TxIdle(val) => {
+                val.radio.handle_interrupt();
+                self.radio_state_machine = val.state_transition();
+            }
+            RadioStateMachineWrapper::Tx(val) => {
+                val.radio.handle_interrupt();
+                self.radio_state_machine = val.state_transition();
+            }
+            RadioStateMachineWrapper::RxDisable(val) => {
+                val.radio.handle_interrupt();
+                self.radio_state_machine = val.state_transition();
+            }
+            RadioStateMachineWrapper::TxDisable(val) => {
+                val.radio.handle_interrupt();
+                self.radio_state_machine = val.state_transition();
+            }
+        }
+    }
+}
+
+impl<'a> AlarmClient for Ieee802154Radio<'a> {
+    fn alarm(&self) {
+        // We can access the alarm from any state
+        match &self.radio_state_machine {
+            RadioStateMachineWrapper::Disabled(val) => val.radio.alarm(),
+            RadioStateMachineWrapper::RxRu(val) => val.radio.alarm(),
+            RadioStateMachineWrapper::RxIdle(val) => val.radio.alarm(),
+            RadioStateMachineWrapper::Rx(val) => val.radio.alarm(),
+            RadioStateMachineWrapper::TxRu(val) => val.radio.alarm(),
+            RadioStateMachineWrapper::TxIdle(val) => val.radio.alarm(),
+            RadioStateMachineWrapper::Tx(val) => val.radio.alarm(),
+            RadioStateMachineWrapper::RxDisable(val) => val.radio.alarm(),
+            RadioStateMachineWrapper::TxDisable(val) => val.radio.alarm(),
+        }
+    }
+}
+
+impl<'a> kernel::hil::radio::RadioConfig for Ieee802154Radio<'a> {
+    fn initialize(
+        &self,
+        _spi_buf: &'static mut [u8],
+        _reg_write: &'static mut [u8],
+        _reg_read: &'static mut [u8],
+    ) -> Result<(), ErrorCode> {
+        match &self.radio_state_machine {
+            RadioStateMachineWrapper::Disabled(val) => {
+                val.radio.initialize(_spi_buf, _reg_write, _reg_read)
+            }
+            RadioStateMachineWrapper::RxRu(val) => {
+                val.radio.initialize(_spi_buf, _reg_write, _reg_read)
+            }
+            RadioStateMachineWrapper::RxIdle(val) => {
+                val.radio.initialize(_spi_buf, _reg_write, _reg_read)
+            }
+            RadioStateMachineWrapper::Rx(val) => {
+                val.radio.initialize(_spi_buf, _reg_write, _reg_read)
+            }
+            RadioStateMachineWrapper::TxRu(val) => {
+                val.radio.initialize(_spi_buf, _reg_write, _reg_read)
+            }
+            RadioStateMachineWrapper::TxIdle(val) => {
+                val.radio.initialize(_spi_buf, _reg_write, _reg_read)
+            }
+            RadioStateMachineWrapper::Tx(val) => {
+                val.radio.initialize(_spi_buf, _reg_write, _reg_read)
+            }
+            RadioStateMachineWrapper::RxDisable(val) => {
+                val.radio.initialize(_spi_buf, _reg_write, _reg_read)
+            }
+            RadioStateMachineWrapper::TxDisable(val) => {
+                val.radio.initialize(_spi_buf, _reg_write, _reg_read)
+            }
+        }
+    }
+
+    fn reset(&self) -> Result<(), ErrorCode> {
+        match &self.radio_state_machine {
+            RadioStateMachineWrapper::Disabled(val) => val.radio.reset(),
+            RadioStateMachineWrapper::RxRu(val) => val.radio.reset(),
+            RadioStateMachineWrapper::RxIdle(val) => val.radio.reset(),
+            RadioStateMachineWrapper::Rx(val) => val.radio.reset(),
+            RadioStateMachineWrapper::TxRu(val) => val.radio.reset(),
+            RadioStateMachineWrapper::TxIdle(val) => val.radio.reset(),
+            RadioStateMachineWrapper::Tx(val) => val.radio.reset(),
+            RadioStateMachineWrapper::RxDisable(val) => val.radio.reset(),
+            RadioStateMachineWrapper::TxDisable(val) => val.radio.reset(),
+        }
+    }
+
+    fn start(&self) -> Result<(), ErrorCode> {
+        match &self.radio_state_machine {
+            RadioStateMachineWrapper::Disabled(val) => val.radio.start(),
+            RadioStateMachineWrapper::RxRu(val) => val.radio.start(),
+            RadioStateMachineWrapper::RxIdle(val) => val.radio.start(),
+            RadioStateMachineWrapper::Rx(val) => val.radio.start(),
+            RadioStateMachineWrapper::TxRu(val) => val.radio.start(),
+            RadioStateMachineWrapper::TxIdle(val) => val.radio.start(),
+            RadioStateMachineWrapper::Tx(val) => val.radio.start(),
+            RadioStateMachineWrapper::RxDisable(val) => val.radio.start(),
+            RadioStateMachineWrapper::TxDisable(val) => val.radio.start(),
+        }
+    }
+
+    fn stop(&self) -> Result<(), ErrorCode> {
+        match &self.radio_state_machine {
+            RadioStateMachineWrapper::Disabled(val) => val.radio.stop(),
+            RadioStateMachineWrapper::RxRu(val) => val.radio.stop(),
+            RadioStateMachineWrapper::RxIdle(val) => val.radio.stop(),
+            RadioStateMachineWrapper::Rx(val) => val.radio.stop(),
+            RadioStateMachineWrapper::TxRu(val) => val.radio.stop(),
+            RadioStateMachineWrapper::TxIdle(val) => val.radio.stop(),
+            RadioStateMachineWrapper::Tx(val) => val.radio.stop(),
+            RadioStateMachineWrapper::RxDisable(val) => val.radio.stop(),
+            RadioStateMachineWrapper::TxDisable(val) => val.radio.stop(),
+        }
+    }
+
+    fn is_on(&self) -> bool {
+        match &self.radio_state_machine {
+            RadioStateMachineWrapper::Disabled(val) => val.radio.is_on(),
+            RadioStateMachineWrapper::RxRu(val) => val.radio.is_on(),
+            RadioStateMachineWrapper::RxIdle(val) => val.radio.is_on(),
+            RadioStateMachineWrapper::Rx(val) => val.radio.is_on(),
+            RadioStateMachineWrapper::TxRu(val) => val.radio.is_on(),
+            RadioStateMachineWrapper::TxIdle(val) => val.radio.is_on(),
+            RadioStateMachineWrapper::Tx(val) => val.radio.is_on(),
+            RadioStateMachineWrapper::RxDisable(val) => val.radio.is_on(),
+            RadioStateMachineWrapper::TxDisable(val) => val.radio.is_on(),
+        }
+    }
+
+    fn busy(&self) -> bool {
+        match &self.radio_state_machine {
+            RadioStateMachineWrapper::Disabled(val) => val.radio.busy(),
+            RadioStateMachineWrapper::RxRu(val) => val.radio.busy(),
+            RadioStateMachineWrapper::RxIdle(val) => val.radio.busy(),
+            RadioStateMachineWrapper::Rx(val) => val.radio.busy(),
+            RadioStateMachineWrapper::TxRu(val) => val.radio.busy(),
+            RadioStateMachineWrapper::TxIdle(val) => val.radio.busy(),
+            RadioStateMachineWrapper::Tx(val) => val.radio.busy(),
+            RadioStateMachineWrapper::RxDisable(val) => val.radio.busy(),
+            RadioStateMachineWrapper::TxDisable(val) => val.radio.busy(),
+        }
+    }
+
+    fn set_power_client(&self, client: &'static dyn PowerClient) {
+        match &self.radio_state_machine {
+            RadioStateMachineWrapper::Disabled(val) => val.radio.set_power_client(client),
+            RadioStateMachineWrapper::RxRu(val) => val.radio.set_power_client(client),
+            RadioStateMachineWrapper::RxIdle(val) => val.radio.set_power_client(client),
+            RadioStateMachineWrapper::Rx(val) => val.radio.set_power_client(client),
+            RadioStateMachineWrapper::TxRu(val) => val.radio.set_power_client(client),
+            RadioStateMachineWrapper::TxIdle(val) => val.radio.set_power_client(client),
+            RadioStateMachineWrapper::Tx(val) => val.radio.set_power_client(client),
+            RadioStateMachineWrapper::RxDisable(val) => val.radio.set_power_client(client),
+            RadioStateMachineWrapper::TxDisable(val) => val.radio.set_power_client(client),
+        }
+    }
+
+    fn config_commit(&self) {
+        match &self.radio_state_machine {
+            RadioStateMachineWrapper::Disabled(val) => val.radio.config_commit(),
+            RadioStateMachineWrapper::RxRu(val) => val.radio.config_commit(),
+            RadioStateMachineWrapper::RxIdle(val) => val.radio.config_commit(),
+            RadioStateMachineWrapper::Rx(val) => val.radio.config_commit(),
+            RadioStateMachineWrapper::TxRu(val) => val.radio.config_commit(),
+            RadioStateMachineWrapper::TxIdle(val) => val.radio.config_commit(),
+            RadioStateMachineWrapper::Tx(val) => val.radio.config_commit(),
+            RadioStateMachineWrapper::RxDisable(val) => val.radio.config_commit(),
+            RadioStateMachineWrapper::TxDisable(val) => val.radio.config_commit(),
+        }
+    }
+
+    fn set_config_client(&self, client: &'static dyn radio::ConfigClient) {
+        match &self.radio_state_machine {
+            RadioStateMachineWrapper::Disabled(val) => val.radio.set_config_client(client),
+            RadioStateMachineWrapper::RxRu(val) => val.radio.set_config_client(client),
+            RadioStateMachineWrapper::RxIdle(val) => val.radio.set_config_client(client),
+            RadioStateMachineWrapper::Rx(val) => val.radio.set_config_client(client),
+            RadioStateMachineWrapper::TxRu(val) => val.radio.set_config_client(client),
+            RadioStateMachineWrapper::TxIdle(val) => val.radio.set_config_client(client),
+            RadioStateMachineWrapper::Tx(val) => val.radio.set_config_client(client),
+            RadioStateMachineWrapper::RxDisable(val) => val.radio.set_config_client(client),
+            RadioStateMachineWrapper::TxDisable(val) => val.radio.set_config_client(client),
+        }
+    }
+
+    fn get_address(&self) -> u16 {
+        match &self.radio_state_machine {
+            RadioStateMachineWrapper::Disabled(val) => val.radio.get_address(),
+            RadioStateMachineWrapper::RxRu(val) => val.radio.get_address(),
+            RadioStateMachineWrapper::RxIdle(val) => val.radio.get_address(),
+            RadioStateMachineWrapper::Rx(val) => val.radio.get_address(),
+            RadioStateMachineWrapper::TxRu(val) => val.radio.get_address(),
+            RadioStateMachineWrapper::TxIdle(val) => val.radio.get_address(),
+            RadioStateMachineWrapper::Tx(val) => val.radio.get_address(),
+            RadioStateMachineWrapper::RxDisable(val) => val.radio.get_address(),
+            RadioStateMachineWrapper::TxDisable(val) => val.radio.get_address(),
+        }
+    }
+
+    fn get_address_long(&self) -> [u8; 8] {
+        match &self.radio_state_machine {
+            RadioStateMachineWrapper::Disabled(val) => val.radio.get_address_long(),
+            RadioStateMachineWrapper::RxRu(val) => val.radio.get_address_long(),
+            RadioStateMachineWrapper::RxIdle(val) => val.radio.get_address_long(),
+            RadioStateMachineWrapper::Rx(val) => val.radio.get_address_long(),
+            RadioStateMachineWrapper::TxRu(val) => val.radio.get_address_long(),
+            RadioStateMachineWrapper::TxIdle(val) => val.radio.get_address_long(),
+            RadioStateMachineWrapper::Tx(val) => val.radio.get_address_long(),
+            RadioStateMachineWrapper::RxDisable(val) => val.radio.get_address_long(),
+            RadioStateMachineWrapper::TxDisable(val) => val.radio.get_address_long(),
+        }
+    }
+
+    fn get_pan(&self) -> u16 {
+        match &self.radio_state_machine {
+            RadioStateMachineWrapper::Disabled(val) => val.radio.get_pan(),
+            RadioStateMachineWrapper::RxRu(val) => val.radio.get_pan(),
+            RadioStateMachineWrapper::RxIdle(val) => val.radio.get_pan(),
+            RadioStateMachineWrapper::Rx(val) => val.radio.get_pan(),
+            RadioStateMachineWrapper::TxRu(val) => val.radio.get_pan(),
+            RadioStateMachineWrapper::TxIdle(val) => val.radio.get_pan(),
+            RadioStateMachineWrapper::Tx(val) => val.radio.get_pan(),
+            RadioStateMachineWrapper::RxDisable(val) => val.radio.get_pan(),
+            RadioStateMachineWrapper::TxDisable(val) => val.radio.get_pan(),
+        }
+    }
+
+    fn get_tx_power(&self) -> i8 {
+        match &self.radio_state_machine {
+            RadioStateMachineWrapper::Disabled(val) => val.radio.get_tx_power(),
+            RadioStateMachineWrapper::RxRu(val) => val.radio.get_tx_power(),
+            RadioStateMachineWrapper::RxIdle(val) => val.radio.get_tx_power(),
+            RadioStateMachineWrapper::Rx(val) => val.radio.get_tx_power(),
+            RadioStateMachineWrapper::TxRu(val) => val.radio.get_tx_power(),
+            RadioStateMachineWrapper::TxIdle(val) => val.radio.get_tx_power(),
+            RadioStateMachineWrapper::Tx(val) => val.radio.get_tx_power(),
+            RadioStateMachineWrapper::RxDisable(val) => val.radio.get_tx_power(),
+            RadioStateMachineWrapper::TxDisable(val) => val.radio.get_tx_power(),
+        }
+    }
+
+    fn get_channel(&self) -> u8 {
+        match &self.radio_state_machine {
+            RadioStateMachineWrapper::Disabled(val) => val.radio.get_channel(),
+            RadioStateMachineWrapper::RxRu(val) => val.radio.get_channel(),
+            RadioStateMachineWrapper::RxIdle(val) => val.radio.get_channel(),
+            RadioStateMachineWrapper::Rx(val) => val.radio.get_channel(),
+            RadioStateMachineWrapper::TxRu(val) => val.radio.get_channel(),
+            RadioStateMachineWrapper::TxIdle(val) => val.radio.get_channel(),
+            RadioStateMachineWrapper::Tx(val) => val.radio.get_channel(),
+            RadioStateMachineWrapper::RxDisable(val) => val.radio.get_channel(),
+            RadioStateMachineWrapper::TxDisable(val) => val.radio.get_channel(),
+        }
+    }
+
+    fn set_address(&self, addr: u16) {
+        match &self.radio_state_machine {
+            RadioStateMachineWrapper::Disabled(val) => val.radio.set_address(addr),
+            RadioStateMachineWrapper::RxRu(val) => val.radio.set_address(addr),
+            RadioStateMachineWrapper::RxIdle(val) => val.radio.set_address(addr),
+            RadioStateMachineWrapper::Rx(val) => val.radio.set_address(addr),
+            RadioStateMachineWrapper::TxRu(val) => val.radio.set_address(addr),
+            RadioStateMachineWrapper::TxIdle(val) => val.radio.set_address(addr),
+            RadioStateMachineWrapper::Tx(val) => val.radio.set_address(addr),
+            RadioStateMachineWrapper::RxDisable(val) => val.radio.set_address(addr),
+            RadioStateMachineWrapper::TxDisable(val) => val.radio.set_address(addr),
+        }
+    }
+
+    fn set_address_long(&self, addr: [u8; 8]) {
+        match &self.radio_state_machine {
+            RadioStateMachineWrapper::Disabled(val) => val.radio.set_address_long(addr),
+            RadioStateMachineWrapper::RxRu(val) => val.radio.set_address_long(addr),
+            RadioStateMachineWrapper::RxIdle(val) => val.radio.set_address_long(addr),
+            RadioStateMachineWrapper::Rx(val) => val.radio.set_address_long(addr),
+            RadioStateMachineWrapper::TxRu(val) => val.radio.set_address_long(addr),
+            RadioStateMachineWrapper::TxIdle(val) => val.radio.set_address_long(addr),
+            RadioStateMachineWrapper::Tx(val) => val.radio.set_address_long(addr),
+            RadioStateMachineWrapper::RxDisable(val) => val.radio.set_address_long(addr),
+            RadioStateMachineWrapper::TxDisable(val) => val.radio.set_address_long(addr),
+        }
+    }
+
+    fn set_pan(&self, id: u16) {
+        match &self.radio_state_machine {
+            RadioStateMachineWrapper::Disabled(val) => val.radio.set_pan(id),
+            RadioStateMachineWrapper::RxRu(val) => val.radio.set_pan(id),
+            RadioStateMachineWrapper::RxIdle(val) => val.radio.set_pan(id),
+            RadioStateMachineWrapper::Rx(val) => val.radio.set_pan(id),
+            RadioStateMachineWrapper::TxRu(val) => val.radio.set_pan(id),
+            RadioStateMachineWrapper::TxIdle(val) => val.radio.set_pan(id),
+            RadioStateMachineWrapper::Tx(val) => val.radio.set_pan(id),
+            RadioStateMachineWrapper::RxDisable(val) => val.radio.set_pan(id),
+            RadioStateMachineWrapper::TxDisable(val) => val.radio.set_pan(id),
+        }
+    }
+
+    fn set_tx_power(&self, power: i8) -> Result<(), ErrorCode> {
+        match &self.radio_state_machine {
+            RadioStateMachineWrapper::Disabled(val) => {
+                kernel::hil::radio::RadioConfig::set_tx_power(&val.radio, power)
+            }
+            RadioStateMachineWrapper::RxRu(val) => {
+                kernel::hil::radio::RadioConfig::set_tx_power(&val.radio, power)
+            }
+            RadioStateMachineWrapper::RxIdle(val) => {
+                kernel::hil::radio::RadioConfig::set_tx_power(&val.radio, power)
+            }
+            RadioStateMachineWrapper::Rx(val) => {
+                kernel::hil::radio::RadioConfig::set_tx_power(&val.radio, power)
+            }
+            RadioStateMachineWrapper::TxRu(val) => {
+                kernel::hil::radio::RadioConfig::set_tx_power(&val.radio, power)
+            }
+            RadioStateMachineWrapper::TxIdle(val) => {
+                kernel::hil::radio::RadioConfig::set_tx_power(&val.radio, power)
+            }
+            RadioStateMachineWrapper::Tx(val) => {
+                kernel::hil::radio::RadioConfig::set_tx_power(&val.radio, power)
+            }
+            RadioStateMachineWrapper::RxDisable(val) => {
+                kernel::hil::radio::RadioConfig::set_tx_power(&val.radio, power)
+            }
+            RadioStateMachineWrapper::TxDisable(val) => {
+                kernel::hil::radio::RadioConfig::set_tx_power(&val.radio, power)
+            }
+        }
+    }
+
+    fn set_channel(&self, chan: u8) -> Result<(), ErrorCode> {
+        match &self.radio_state_machine {
+            RadioStateMachineWrapper::Disabled(val) => val.radio.set_channel(chan),
+            RadioStateMachineWrapper::RxRu(val) => val.radio.set_channel(chan),
+            RadioStateMachineWrapper::RxIdle(val) => val.radio.set_channel(chan),
+            RadioStateMachineWrapper::Rx(val) => val.radio.set_channel(chan),
+            RadioStateMachineWrapper::TxRu(val) => val.radio.set_channel(chan),
+            RadioStateMachineWrapper::TxIdle(val) => val.radio.set_channel(chan),
+            RadioStateMachineWrapper::Tx(val) => val.radio.set_channel(chan),
+            RadioStateMachineWrapper::RxDisable(val) => val.radio.set_channel(chan),
+            RadioStateMachineWrapper::TxDisable(val) => val.radio.set_channel(chan),
+        }
+    }
+}
+
+impl<'a> kernel::hil::radio::RadioData for Ieee802154Radio<'a> {
+    fn set_transmit_client(&self, client: &'static dyn radio::TxClient) {
+        match &self.radio_state_machine {
+            RadioStateMachineWrapper::Disabled(val) => val.radio.set_transmit_client(client),
+            RadioStateMachineWrapper::RxRu(val) => val.radio.set_transmit_client(client),
+            RadioStateMachineWrapper::RxIdle(val) => val.radio.set_transmit_client(client),
+            RadioStateMachineWrapper::Rx(val) => val.radio.set_transmit_client(client),
+            RadioStateMachineWrapper::TxRu(val) => val.radio.set_transmit_client(client),
+            RadioStateMachineWrapper::TxIdle(val) => val.radio.set_transmit_client(client),
+            RadioStateMachineWrapper::Tx(val) => val.radio.set_transmit_client(client),
+            RadioStateMachineWrapper::RxDisable(val) => val.radio.set_transmit_client(client),
+            RadioStateMachineWrapper::TxDisable(val) => val.radio.set_transmit_client(client),
+        }
+    }
+
+    fn set_receive_client(
+        &self,
+        client: &'static dyn radio::RxClient,
+        receive_buffer: &'static mut [u8],
+    ) {
+        match &self.radio_state_machine {
+            RadioStateMachineWrapper::Disabled(val) => {
+                val.radio.set_receive_client(client, receive_buffer)
+            }
+            RadioStateMachineWrapper::RxRu(val) => {
+                val.radio.set_receive_client(client, receive_buffer)
+            }
+            RadioStateMachineWrapper::RxIdle(val) => {
+                val.radio.set_receive_client(client, receive_buffer)
+            }
+            RadioStateMachineWrapper::Rx(val) => {
+                val.radio.set_receive_client(client, receive_buffer)
+            }
+            RadioStateMachineWrapper::TxRu(val) => {
+                val.radio.set_receive_client(client, receive_buffer)
+            }
+            RadioStateMachineWrapper::TxIdle(val) => {
+                val.radio.set_receive_client(client, receive_buffer)
+            }
+            RadioStateMachineWrapper::Tx(val) => {
+                val.radio.set_receive_client(client, receive_buffer)
+            }
+            RadioStateMachineWrapper::RxDisable(val) => {
+                val.radio.set_receive_client(client, receive_buffer)
+            }
+            RadioStateMachineWrapper::TxDisable(val) => {
+                val.radio.set_receive_client(client, receive_buffer)
+            }
+        }
+    }
+
+    fn set_receive_buffer(&self, receive_buffer: &'static mut [u8]) {
+        match &self.radio_state_machine {
+            RadioStateMachineWrapper::Disabled(val) => val.radio.set_receive_buffer(receive_buffer),
+            RadioStateMachineWrapper::RxRu(val) => val.radio.set_receive_buffer(receive_buffer),
+            RadioStateMachineWrapper::RxIdle(val) => val.radio.set_receive_buffer(receive_buffer),
+            RadioStateMachineWrapper::Rx(val) => val.radio.set_receive_buffer(receive_buffer),
+            RadioStateMachineWrapper::TxRu(val) => val.radio.set_receive_buffer(receive_buffer),
+            RadioStateMachineWrapper::TxIdle(val) => val.radio.set_receive_buffer(receive_buffer),
+            RadioStateMachineWrapper::Tx(val) => val.radio.set_receive_buffer(receive_buffer),
+            RadioStateMachineWrapper::RxDisable(val) => {
+                val.radio.set_receive_buffer(receive_buffer)
+            }
+            RadioStateMachineWrapper::TxDisable(val) => {
+                val.radio.set_receive_buffer(receive_buffer)
+            }
+        }
+    }
+
+    fn transmit(
+        &self,
+        spi_buf: &'static mut [u8],
+        frame_len: usize,
+    ) -> Result<(), (ErrorCode, &'static mut [u8])> {
+        match &self.radio_state_machine {
+            RadioStateMachineWrapper::Disabled(val) => val.radio.transmit(spi_buf, frame_len),
+            RadioStateMachineWrapper::RxRu(val) => val.radio.transmit(spi_buf, frame_len),
+            RadioStateMachineWrapper::RxIdle(val) => val.radio.transmit(spi_buf, frame_len),
+            RadioStateMachineWrapper::Rx(val) => val.radio.transmit(spi_buf, frame_len),
+            RadioStateMachineWrapper::TxRu(val) => val.radio.transmit(spi_buf, frame_len),
+            RadioStateMachineWrapper::TxIdle(val) => val.radio.transmit(spi_buf, frame_len),
+            RadioStateMachineWrapper::Tx(val) => val.radio.transmit(spi_buf, frame_len),
+            RadioStateMachineWrapper::RxDisable(val) => val.radio.transmit(spi_buf, frame_len),
+            RadioStateMachineWrapper::TxDisable(val) => val.radio.transmit(spi_buf, frame_len),
+        }
     }
 }
